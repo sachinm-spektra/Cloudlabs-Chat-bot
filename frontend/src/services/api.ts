@@ -52,6 +52,14 @@ export const authApi = {
     api.get<User>('/auth/me', token ? { headers: { Authorization: `Bearer ${token}` } } : undefined),
 }
 
+export const ticketApi = {
+  raise: (ticketId: string) =>
+    api.post<{ status: string; message: string }>(`/tickets/${ticketId}/raise`),
+
+  getById: (ticketId: string) =>
+    api.get<Ticket>(`/tickets/${ticketId}`),
+}
+
 export const sessionApi = {
   create: () => api.post<{ session: Session; ticket: Ticket }>('/sessions'),
 
@@ -106,9 +114,33 @@ export const adminApi = {
 
   getTokenUsage: (days = 30) =>
     api.get<TokenUsagePoint[]>('/admin/token-usage', { params: { days } }),
+
+  sendSessionMessage: (sessionId: string, content: string) =>
+    api.post<Message>(`/admin/sessions/${sessionId}/messages`, { content }),
+
+  getOpenTicketCount: () =>
+    api.get<{ count: number }>('/admin/tickets/open-count'),
+
+  escalateToL2: (ticketId: string) =>
+    api.post(`/admin/tickets/${ticketId}/escalate-l2`),
+
+  escalateToOwner: (ticketId: string) =>
+    api.post(`/admin/tickets/${ticketId}/escalate-owner`),
+
+  aiQuery: (question: string, sessionId?: string) =>
+    api.post<{ content: string; citations: Array<{ source_title: string; source_url?: string }> }>(
+      '/admin/ai-query',
+      { question, session_id: sessionId }
+    ),
+
+  updateTicketStatus: (ticketId: string, status: string) =>
+    api.put<{ status: string }>(`/admin/tickets/${ticketId}/status`, { status }),
 }
 
 export const knowledgeApi = {
+  getConfigStatus: () =>
+    api.get<{ storage_configured: boolean; search_configured: boolean; openai_configured: boolean; storage_container: string }>('/admin/knowledge/config-status'),
+
   listBlobs: () =>
     api.get<KnowledgeBlob[]>('/admin/knowledge/blobs'),
 
@@ -120,4 +152,10 @@ export const knowledgeApi = {
 
   deleteBlob: (blobName: string) =>
     api.delete(`/admin/knowledge/blobs/${encodeURIComponent(blobName)}`),
+
+  upload: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api.post<{ blob_name: string; size: number }>('/admin/knowledge/upload', form)
+  },
 }

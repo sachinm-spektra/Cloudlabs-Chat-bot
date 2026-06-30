@@ -13,48 +13,32 @@ function buildKPIs(m: AdminMetrics): KPI[] {
     {
       label: 'KNOWLEDGE ARTICLES',
       value: m.knowledge_articles.toLocaleString(),
-      sub: '+24 this week',
+      sub: m.knowledge_articles === 0 ? 'No files indexed yet' : 'Indexed documents',
       icon: <BookOpen size={18} className="text-gray-400" />,
     },
     {
       label: 'RESOLVED QUERIES',
       value: m.resolved_queries.toLocaleString(),
-      sub: `+${m.resolution_rate.toFixed(0)}% vs last month`,
+      sub: m.resolution_rate > 0 ? `${m.resolution_rate.toFixed(0)}% resolution rate` : 'No resolutions yet',
       icon: <CheckCircle2 size={18} className="text-gray-400" />,
     },
     {
       label: 'CONNECTED SOURCES',
       value: m.connected_sources,
-      sub: '2 syncing',
+      sub: m.connected_sources === 0 ? 'No Azure services configured' : 'Azure services active',
       icon: <Database size={18} className="text-gray-400" />,
     },
     {
       label: 'SEARCH SUCCESS RATE',
       value: `${m.search_success_rate.toFixed(0)}%`,
-      sub: '+3.4%',
+      sub: m.search_success_rate === 0 ? 'No searches yet' : 'Responses with citations',
       icon: <TrendingUp size={18} className="text-gray-400" />,
     },
   ]
 }
 
-const MOCK: AdminMetrics = {
-  total_sessions: 120,
-  active_sessions: 8,
-  tickets_resolved_by_ai: 832,
-  open_tickets: 14,
-  transferred_tickets: 6,
-  resolution_rate: 12,
-  avg_satisfaction: 4.3,
-  total_tokens: 5_400_000,
-  prompt_tokens: 3_200_000,
-  completion_tokens: 2_200_000,
-  knowledge_articles: 1248,
-  search_success_rate: 92,
-  connected_sources: 14,
-  resolved_queries: 832,
-}
-
-export default function KPICards({ metrics = MOCK }: { metrics?: AdminMetrics }) {
+export default function KPICards({ metrics }: { metrics?: AdminMetrics }) {
+  if (!metrics) return null
   const kpis = buildKPIs(metrics)
   return (
     <div className="grid grid-cols-4 gap-4">

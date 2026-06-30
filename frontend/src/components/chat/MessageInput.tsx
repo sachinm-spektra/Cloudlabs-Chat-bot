@@ -6,9 +6,10 @@ import { useChatStore } from '../../store/chatStore'
 interface Props {
   onSend: (text: string) => void
   disabled?: boolean
+  dark?: boolean
 }
 
-export default function MessageInput({ onSend, disabled }: Props) {
+export default function MessageInput({ onSend, disabled, dark }: Props) {
   const [text, setText] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const { pendingAttachments } = useChatStore()
@@ -38,9 +39,9 @@ export default function MessageInput({ onSend, disabled }: Props) {
   }
 
   return (
-    <div className="border-t border-gray-100 bg-gray-50">
-      <div className="flex items-end gap-2 px-3 py-2.5">
-        <FileUpload />
+    <div className={dark ? '' : 'border-t border-gray-100 bg-gray-50'}>
+      <div className="flex items-end gap-2 px-4 py-3">
+        <FileUpload dark={dark} />
 
         <textarea
           ref={textareaRef}
@@ -50,8 +51,10 @@ export default function MessageInput({ onSend, disabled }: Props) {
           onKeyDown={onKeyDown}
           onInput={handleInput}
           disabled={disabled}
-          placeholder="Ask anything about your labs, billing, or…"
-          className="flex-1 resize-none bg-transparent text-sm text-gray-800 placeholder-gray-400 focus:outline-none py-1 max-h-[120px] scrollbar-thin"
+          placeholder="Describe your lab issue or ask anything…"
+          className={`flex-1 resize-none bg-transparent text-sm focus:outline-none py-1 max-h-[120px] scrollbar-thin ${
+            dark ? 'text-white placeholder-slate-400' : 'text-gray-800 placeholder-gray-400'
+          }`}
         />
 
         <button
@@ -64,9 +67,9 @@ export default function MessageInput({ onSend, disabled }: Props) {
         </button>
       </div>
 
-      <p className="text-center text-[11px] text-gray-400 pb-2">
+      <p className={`text-center text-[11px] pb-2 ${dark ? 'text-slate-500' : 'text-gray-400'}`}>
         Enter to send · Shift+Enter for newline ·{' '}
-        <span className="font-semibold text-gray-500">Powered by CloudLabs AI</span>
+        <span className={dark ? 'font-semibold text-slate-400' : 'font-semibold text-gray-500'}>Powered by CloudLabs AI</span>
       </p>
     </div>
   )

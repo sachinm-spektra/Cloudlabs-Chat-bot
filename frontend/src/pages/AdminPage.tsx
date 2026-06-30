@@ -11,7 +11,7 @@ export type AdminView =
   | 'dashboard'
   | 'ai-chat'
   | 'knowledge-base'
-  | 'issue-explorer'
+  | 'tickets'
   | 'analytics'
   | 'settings'
 
@@ -23,7 +23,7 @@ export default function AdminPage() {
       case 'dashboard':      return <Dashboard onNavigate={setActiveView} />
       case 'ai-chat':        return <AIChat />
       case 'knowledge-base': return <KnowledgeBase />
-      case 'issue-explorer': return <IssueExplorer />
+      case 'tickets':        return <IssueExplorer />
       case 'analytics':      return <Analytics />
       case 'settings':       return <SettingsPlaceholder />
       default:               return <Dashboard onNavigate={setActiveView} />

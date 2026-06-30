@@ -1,11 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from datetime import datetime, timezone, timedelta
 from ...core.database import get_db
 from ...models.user import User
-from ...models.chat import Session, ChatMessage, SessionStatus, MessageRole
+from ...models.chat import Session, ChatMessage, Citation, SessionStatus, MessageRole
 from ...models.ticket import Ticket, TicketStatus, TokenUsageLog, SatisfactionFeedback
 from ...schemas.ticket import AdminMetrics, ActivityItem, TicketRead, TicketListResponse, TokenUsagePoint
 from ...schemas.chat import MessageRead, SessionRead
@@ -54,6 +54,35 @@ async def get_metrics(
     prompt_t = (await db.execute(select(func.sum(TokenUsageLog.prompt_tokens)))).scalar_one() or 0
     comp_t = (await db.execute(select(func.sum(TokenUsageLog.completion_tokens)))).scalar_one() or 0
 
+    # Real knowledge stats from search index / storage
+    from ...services.knowledge_service import get_indexed_chunk_counts, list_blobs
+    from ...core.config import get_settings as _get_settings
+    _settings = _get_settings()
+    try:
+        counts = await get_indexed_chunk_counts()
+        knowledge_articles = len(counts)  # number of unique indexed blobs
+    except Exception:
+        knowledge_articles = 0
+
+    # Count configured Azure services
+    connected_sources = sum([
+        bool(_settings.azure_storage_connection_string and "your-account" not in _settings.azure_storage_connection_string),
+        bool(_settings.azure_search_endpoint and "your-search" not in _settings.azure_search_endpoint),
+        bool(_settings.azure_openai_endpoint and "your-resource" not in _settings.azure_openai_endpoint),
+    ])
+
+    # Search success rate = % of AI messages that returned at least 1 citation
+    from ...models.chat import Citation
+    total_ai_msgs = (
+        await db.execute(select(func.count(ChatMessage.id)).where(ChatMessage.role == MessageRole.assistant))
+    ).scalar_one()
+    msgs_with_citations = (
+        await db.execute(
+            select(func.count(func.distinct(Citation.message_id)))
+        )
+    ).scalar_one()
+    search_success_rate = round((msgs_with_citations / total_ai_msgs * 100), 1) if total_ai_msgs else 0.0
+
     return AdminMetrics(
         total_sessions=total_sessions,
         active_sessions=active_sessions,
@@ -65,9 +94,9 @@ async def get_metrics(
         total_tokens=prompt_t + comp_t,
         prompt_tokens=prompt_t,
         completion_tokens=comp_t,
-        knowledge_articles=1248,
-        search_success_rate=92.0,
-        connected_sources=14,
+        knowledge_articles=knowledge_articles,
+        search_success_rate=search_success_rate,
+        connected_sources=connected_sources,
         resolved_queries=resolved_ai,
     )
 
@@ -233,6 +262,21 @@ class IngestRequest(BaseModel):
     blob_name: str | None = None
 
 
+@router.get("/knowledge/config-status")
+async def knowledge_config_status(_: User = Depends(get_admin_user)):
+    from ...core.config import get_settings
+    s = get_settings()
+    cs = s.azure_storage_connection_string or ""
+    se = s.azure_search_endpoint or ""
+    oe = s.azure_openai_endpoint or ""
+    return {
+        "storage_configured": bool(cs) and "your-account" not in cs,
+        "search_configured": bool(se) and "your-search" not in se,
+        "openai_configured": bool(oe) and "your-resource" not in oe,
+        "storage_container": s.azure_storage_container_name or "uploads",
+    }
+
+
 @router.get("/knowledge/blobs")
 async def list_knowledge_blobs(_: User = Depends(get_admin_user)):
     from ...services.knowledge_service import list_blobs, get_indexed_chunk_counts
@@ -264,3 +308,231 @@ async def delete_knowledge_blob(
     from ...services.knowledge_service import delete_blob_chunks
     deleted = await delete_blob_chunks(blob_name)
     return {"deleted_chunks": deleted}
+
+
+KNOWLEDGE_ALLOWED_TYPES = {
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/msword",
+    "text/markdown",
+    "text/plain",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-excel",
+}
+KNOWLEDGE_ALLOWED_EXTS = {".pdf", ".docx", ".doc", ".md", ".txt", ".xlsx", ".xls"}
+
+
+@router.post("/knowledge/upload")
+async def upload_knowledge_file(
+    file: UploadFile = File(...),
+    _: User = Depends(get_admin_user),
+):
+    import os
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in KNOWLEDGE_ALLOWED_EXTS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type '{ext}'. Allowed: {', '.join(KNOWLEDGE_ALLOWED_EXTS)}",
+        )
+    content = await file.read()
+    from ...services.knowledge_service import upload_knowledge_blob
+    blob_name = await upload_knowledge_blob(content, file.filename or "upload", file.content_type or "application/octet-stream")
+    return {"blob_name": blob_name, "size": len(content)}
+
+
+@router.get("/tickets/open-count")
+async def get_open_ticket_count(
+    _: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    # Only count tickets explicitly raised to support (not AI-only sessions)
+    count = (
+        await db.execute(
+            select(func.count(Ticket.id)).where(
+                Ticket.status.in_([
+                    TicketStatus.open,
+                    TicketStatus.transferred_to_support,
+                    TicketStatus.l2_escalated,
+                    TicketStatus.owner_escalated,
+                ])
+            )
+        )
+    ).scalar_one()
+    return {"count": count}
+
+
+@router.get("/tickets/{ticket_id}", response_model=TicketRead)
+async def get_ticket(
+    ticket_id: str,
+    _: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    res = await db.execute(select(Ticket).options(selectinload(Ticket.user)).where(Ticket.id == ticket_id))
+    t = res.scalar_one_or_none()
+    if not t:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    count_res = await db.execute(select(func.count(ChatMessage.id)).where(ChatMessage.session_id == t.session_id))
+    count = count_res.scalar_one()
+    msg_res = await db.execute(
+        select(ChatMessage).where(ChatMessage.session_id == t.session_id).order_by(ChatMessage.created_at.desc()).limit(1)
+    )
+    last = msg_res.scalar_one_or_none()
+    return TicketRead(
+        id=t.id,
+        session_id=t.session_id,
+        user_id=t.user_id,
+        user_name=t.user.name if t.user else None,
+        user_email=t.user.email if t.user else None,
+        status=t.status,
+        created_at=t.created_at,
+        updated_at=t.updated_at,
+        message_count=count,
+        last_message=last.content[:100] if last else None,
+    )
+
+
+class AdminMessageRequest(BaseModel):
+    content: str
+
+
+class TicketStatusUpdateRequest(BaseModel):
+    status: str
+
+
+@router.put("/tickets/{ticket_id}/status", status_code=200)
+async def update_ticket_status(
+    ticket_id: str,
+    body: TicketStatusUpdateRequest,
+    _: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    res = await db.execute(select(Ticket).where(Ticket.id == ticket_id))
+    ticket = res.scalar_one_or_none()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    try:
+        ticket.status = TicketStatus(body.status)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid status: {body.status}")
+    await db.commit()
+    return {"status": body.status}
+
+
+@router.post("/sessions/{session_id}/messages")
+async def admin_send_message(
+    session_id: str,
+    body: AdminMessageRequest,
+    current_admin: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from ...models.chat import ChatMessage, MessageRole
+    res = await db.execute(select(Session).where(Session.id == session_id))
+    session = res.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Update ticket status to transferred_to_support if still open, so user sees support replied
+    ticket_res = await db.execute(select(Ticket).where(Ticket.session_id == session_id))
+    ticket = ticket_res.scalar_one_or_none()
+    if ticket and ticket.status == TicketStatus.open:
+        ticket.status = TicketStatus.transferred_to_support
+
+    msg = ChatMessage(
+        id=str(uuid.uuid4()),
+        session_id=session_id,
+        role=MessageRole.assistant,
+        content=f"[Support] {body.content}",
+        prompt_tokens=0,
+        completion_tokens=0,
+    )
+    db.add(msg)
+    await db.commit()
+    # Reload with eager-loaded relationships to avoid MissingGreenlet in async context
+    res2 = await db.execute(
+        select(ChatMessage)
+        .options(selectinload(ChatMessage.citations), selectinload(ChatMessage.attachments))
+        .where(ChatMessage.id == msg.id)
+    )
+    loaded = res2.scalar_one()
+    from ...schemas.chat import MessageRead
+    return MessageRead.model_validate(loaded)
+
+
+# ── Ticket Escalation ────────────────────────────────────────────────────────
+
+@router.post("/tickets/{ticket_id}/escalate-l2", status_code=200)
+async def escalate_to_l2(
+    ticket_id: str,
+    current_admin: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from ...models.ticket import TicketTransfer
+    res = await db.execute(select(Ticket).where(Ticket.id == ticket_id))
+    ticket = res.scalar_one_or_none()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    ticket.status = TicketStatus.l2_escalated
+    transfer = TicketTransfer(ticket_id=ticket_id, transferred_by=current_admin.id, notes="Escalated to L2 Engineer")
+    db.add(transfer)
+    await db.commit()
+    return {"status": "l2_escalated"}
+
+
+@router.post("/tickets/{ticket_id}/escalate-owner", status_code=200)
+async def escalate_to_owner(
+    ticket_id: str,
+    current_admin: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from ...models.ticket import TicketTransfer
+    res = await db.execute(select(Ticket).where(Ticket.id == ticket_id))
+    ticket = res.scalar_one_or_none()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    ticket.status = TicketStatus.owner_escalated
+    transfer = TicketTransfer(ticket_id=ticket_id, transferred_by=current_admin.id, notes="Escalated to Lab Owner")
+    db.add(transfer)
+    await db.commit()
+    return {"status": "owner_escalated"}
+
+
+# ── Admin AI Query (real AI, not broken session lookup) ───────────────────────
+
+class AdminAIQueryRequest(BaseModel):
+    question: str
+    session_id: str | None = None  # optional: load user session as context
+
+
+@router.post("/ai-query")
+async def admin_ai_query(
+    payload: AdminAIQueryRequest,
+    _: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from ...services.search_service import retrieve_chunks
+    from ...services.openai_service import get_openai_response
+
+    history = []
+    if payload.session_id:
+        hist_res = await db.execute(
+            select(ChatMessage)
+            .where(ChatMessage.session_id == payload.session_id)
+            .order_by(ChatMessage.created_at.desc())
+            .limit(12)
+        )
+        history = list(reversed(hist_res.scalars().all()))
+
+    chunks = await retrieve_chunks(payload.question)
+    ai_response = await get_openai_response(
+        question=payload.question,
+        history=history,
+        chunks=chunks,
+        attachment_context="",
+    )
+    citations = [
+        {"source_title": c.get("source_title", ""), "source_url": c.get("source_url")}
+        for c in chunks
+        if c.get("source_title")
+    ]
+    return {"content": ai_response["content"], "citations": citations}

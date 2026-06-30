@@ -18,9 +18,9 @@ const ACTIONS: Action[] = [
     color: 'bg-primary-500',
   },
   {
-    id: 'issue-explorer',
-    label: 'Browse Issues',
-    desc: 'Search the issue tracker by lab, product or severity.',
+    id: 'tickets',
+    label: 'Tickets',
+    desc: 'Search and manage support tickets by user or status.',
     icon: <AlertCircle size={20} className="text-white" />,
     color: 'bg-cyan-500',
   },

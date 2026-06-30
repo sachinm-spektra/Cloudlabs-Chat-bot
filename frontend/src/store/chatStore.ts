@@ -11,6 +11,7 @@ interface ChatState {
   uploadedAttachmentIds: string[]
   showSatisfaction: boolean
   setSession: (session: Session, ticket: Ticket) => void
+  setTicket: (ticket: Ticket) => void
   addMessage: (message: Message) => void
   updateLastMessage: (content: string) => void
   setMessages: (messages: Message[]) => void
@@ -34,6 +35,7 @@ export const useChatStore = create<ChatState>((set) => ({
   uploadedAttachmentIds: [],
   showSatisfaction: false,
   setSession: (session, ticket) => set({ session, ticket }),
+  setTicket: (ticket) => set({ ticket }),
   addMessage: (message) =>
     set((state) => ({ messages: [...state.messages, message] })),
   updateLastMessage: (content) =>

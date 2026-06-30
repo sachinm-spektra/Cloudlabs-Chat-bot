@@ -14,7 +14,7 @@ export default function AdminLayout({ activeView, onNavigate, children }: Props)
       <Sidebar active={activeView} onNavigate={onNavigate} />
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <TopBar />
+        <TopBar onNavigate={onNavigate} />
         <main className="flex-1 overflow-y-auto scrollbar-thin p-6">
           {children}
         </main>

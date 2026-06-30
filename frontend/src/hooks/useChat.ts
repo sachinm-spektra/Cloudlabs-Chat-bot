@@ -1,6 +1,9 @@
-import { useCallback, useEffect } from 'react'
-import { sessionApi, fileApi } from '../services/api'
+import { useCallback, useEffect, useState } from 'react'
+import { sessionApi, fileApi, ticketApi } from '../services/api'
 import { useChatStore } from '../store/chatStore'
+import type { TicketStatus } from '../types'
+
+const HUMAN_STATUSES: TicketStatus[] = ['open', 'transferred_to_support', 'l2_escalated', 'owner_escalated']
 
 export function useChat() {
   const {
@@ -11,6 +14,7 @@ export function useChat() {
     isStarting,
     pendingAttachments,
     setSession,
+    setTicket,
     addMessage,
     setMessages,
     setLoading,
@@ -22,20 +26,47 @@ export function useChat() {
     clearChat,
   } = useChatStore()
 
+  const [isRaising, setIsRaising] = useState(false)
+
   const startSession = useCallback(async () => {
     if (session) return
     setStarting(true)
     try {
       const { data } = await sessionApi.create()
       setSession(data.session, data.ticket)
+      // Load the welcome message saved by the backend during session creation
+      const { data: msgs } = await sessionApi.getMessages(data.session.id)
+      setMessages(msgs)
     } finally {
       setStarting(false)
     }
-  }, [session, setSession, setStarting])
+  }, [session, setSession, setStarting, setMessages])
 
   useEffect(() => {
     startSession()
   }, [])
+
+  // Poll for new messages when ticket is being handled by a human agent
+  useEffect(() => {
+    if (!session || !ticket) return
+    if (!HUMAN_STATUSES.includes(ticket.status)) return
+
+    const poll = async () => {
+      try {
+        const [{ data: msgs }, { data: refreshed }] = await Promise.all([
+          sessionApi.getMessages(session.id),
+          ticketApi.getById(ticket.id),
+        ])
+        setMessages(msgs)
+        setTicket(refreshed)
+      } catch {
+        // ignore network errors silently
+      }
+    }
+
+    const id = setInterval(poll, 30_000)
+    return () => clearInterval(id)
+  }, [session?.id, ticket?.status])
 
   const sendMessage = useCallback(
     async (content: string) => {
@@ -97,6 +128,20 @@ export function useChat() {
     setMessages(data)
   }, [session, setMessages])
 
+  const raiseTicket = useCallback(async () => {
+    if (!ticket || isRaising) return
+    setIsRaising(true)
+    try {
+      await ticketApi.raise(ticket.id)
+      const { data: refreshed } = await ticketApi.getById(ticket.id)
+      setTicket(refreshed)
+    } catch {
+      // ignore — ticket remains in current state
+    } finally {
+      setIsRaising(false)
+    }
+  }, [ticket, isRaising, setTicket])
+
   return {
     session,
     ticket,
@@ -107,5 +152,7 @@ export function useChat() {
     closeSession,
     loadHistory,
     startSession,
+    raiseTicket,
+    isRaising,
   }
 }

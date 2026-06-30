@@ -1,3 +1,4 @@
+import re
 from typing import Any
 from openai import AsyncAzureOpenAI
 from ..core.config import get_settings
@@ -70,19 +71,34 @@ async def get_openai_response(
     for msg in history[-8:]:
         messages.append({"role": msg.role.value, "content": msg.content})
 
-    response = await client.chat.completions.create(
-        model=settings.azure_openai_deployment_name,
-        messages=messages,
-        temperature=0.3,
-        max_tokens=1024,
-    )
-
-    choice = response.choices[0]
-    return {
-        "content": choice.message.content or "",
-        "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
-        "completion_tokens": response.usage.completion_tokens if response.usage else 0,
-    }
+    try:
+        response = await client.chat.completions.create(
+            model=settings.azure_openai_deployment_name,
+            messages=messages,
+            temperature=0.3,
+            max_tokens=1024,
+        )
+        choice = response.choices[0]
+        raw_content = choice.message.content or ""
+        # Strip AI-generated citation reference lines (e.g. "- [Context Reference](#4, #5)")
+        cleaned = re.sub(r'\n?-?\s*\[Context Reference[^\]]*\]\([^)]*\)', '', raw_content)
+        cleaned = cleaned.strip()
+        return {
+            "content": cleaned,
+            "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
+            "completion_tokens": response.usage.completion_tokens if response.usage else 0,
+        }
+    except Exception:
+        return {
+            "content": (
+                "I'm unable to reach the AI service at the moment. "
+                "Please ensure your Azure OpenAI credentials are correctly set in the backend `.env` file "
+                "and restart the backend container.\n\n"
+                "In the meantime, you can raise a support ticket and our team will assist you."
+            ),
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+        }
 
 
 async def get_embedding(text: str) -> list[float]:

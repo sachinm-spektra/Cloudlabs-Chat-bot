@@ -32,6 +32,26 @@ async def get_ticket(
     )
 
 
+@router.post("/{ticket_id}/raise", status_code=200)
+async def raise_ticket(
+    ticket_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """User explicitly raises ticket to human support when AI couldn't help."""
+    res = await db.execute(
+        select(Ticket).where(Ticket.id == ticket_id, Ticket.user_id == current_user.id)
+    )
+    ticket = res.scalar_one_or_none()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    if ticket.status not in (TicketStatus.new, TicketStatus.in_progress_ai):
+        return {"status": ticket.status, "message": "Ticket already raised"}
+    ticket.status = TicketStatus.open
+    await db.commit()
+    return {"status": "raised", "message": "Your ticket has been raised. Support team will respond shortly."}
+
+
 @router.post("/{ticket_id}/resolve", status_code=200)
 async def mark_resolved(
     ticket_id: str,

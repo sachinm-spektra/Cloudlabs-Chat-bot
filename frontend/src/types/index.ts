@@ -6,6 +6,8 @@ export type TicketStatus =
   | 'resolved_by_ai'
   | 'open'
   | 'transferred_to_support'
+  | 'l2_escalated'
+  | 'owner_escalated'
   | 'closed'
 
 export interface User {

@@ -10,7 +10,7 @@ function fileIcon(type: string) {
   return <FileText size={12} />
 }
 
-export default function FileUpload() {
+export default function FileUpload({ dark }: { dark?: boolean }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const { pendingAttachments, addPendingAttachment, removePendingAttachment } = useChatStore()
 
@@ -40,8 +40,8 @@ export default function FileUpload() {
       <button
         type="button"
         onClick={() => inputRef.current?.click()}
-        className="p-1.5 text-gray-400 hover:text-primary-600 transition-colors rounded-lg hover:bg-primary-50"
-        title="Attach file"
+        className={`p-1.5 transition-colors rounded-lg ${dark ? 'text-slate-400 hover:text-primary-400 hover:bg-white/10' : 'text-gray-400 hover:text-primary-600 hover:bg-primary-50'}`}
+        title="Attach file (screenshot, PDF, doc)"
       >
         <Paperclip size={17} />
       </button>

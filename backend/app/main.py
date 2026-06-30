@@ -10,7 +10,14 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Add new enum values before table creation (safe no-op if already exists)
     async with engine.begin() as conn:
+        from sqlalchemy import text
+        for val in ("l2_escalated", "owner_escalated"):
+            try:
+                await conn.execute(text(f"ALTER TYPE ticketstatus ADD VALUE IF NOT EXISTS '{val}'"))
+            except Exception:
+                pass
         await conn.run_sync(Base.metadata.create_all)
     yield
     await engine.dispose()

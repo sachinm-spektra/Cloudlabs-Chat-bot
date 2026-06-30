@@ -147,6 +147,25 @@ def _chunk_id(blob_name: str, index: int) -> str:
     return f"{safe}__{index}"
 
 
+async def upload_knowledge_blob(content: bytes, filename: str, content_type: str) -> str:
+    """Upload a file to the knowledge prefix in the storage container. Returns blob_name."""
+    import re as _re
+    safe_name = _re.sub(r"[^\w.\-]", "_", filename)
+    blob_name = f"knowledge/{safe_name}"
+    svc = _blob_svc()
+    if not svc:
+        return blob_name
+    try:
+        container = svc.get_container_client(settings.azure_storage_container_name)
+        blob = container.get_blob_client(blob_name)
+        await blob.upload_blob(content, content_settings={"content_type": content_type}, overwrite=True)
+    except Exception:
+        pass
+    finally:
+        await svc.close()
+    return blob_name
+
+
 async def list_blobs() -> list[dict]:
     """List all knowledge-base files in the storage container."""
     svc = _blob_svc()
@@ -164,6 +183,8 @@ async def list_blobs() -> list[dict]:
                 "size": blob.size,
                 "last_modified": blob.last_modified.isoformat() if blob.last_modified else None,
             })
+    except Exception:
+        pass
     finally:
         await svc.close()
     return results

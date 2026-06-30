@@ -12,7 +12,7 @@ const NAV: NavItem[] = [
   { id: 'dashboard',      label: 'Dashboard',      icon: <LayoutDashboard size={16} /> },
   { id: 'ai-chat',        label: 'AI Chat',         icon: <MessageSquare size={16} />, badge: 'New' },
   { id: 'knowledge-base', label: 'Knowledge Base',  icon: <BookOpen size={16} /> },
-  { id: 'issue-explorer', label: 'Issue Explorer',  icon: <AlertCircle size={16} /> },
+  { id: 'tickets',        label: 'Tickets',          icon: <AlertCircle size={16} /> },
   { id: 'analytics',      label: 'Analytics',       icon: <BarChart3 size={16} /> },
   { id: 'settings',       label: 'Settings',        icon: <Settings size={16} /> },
 ]
