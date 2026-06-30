@@ -38,11 +38,11 @@ export default function Dashboard({ onNavigate }: { onNavigate: (v: AdminView) =
             <p className="text-gray-500 text-sm mt-1.5 max-w-lg">
               Your AI Lab Support Agent has indexed{' '}
               <strong className="text-gray-800">
-                {loading ? '…' : (metrics?.knowledge_articles ?? 1248).toLocaleString()} articles
+                {loading ? '…' : (metrics?.knowledge_articles ?? 0).toLocaleString()} articles
               </strong>{' '}
               across{' '}
               <strong className="text-gray-800">
-                {loading ? '…' : metrics?.connected_sources ?? 14} sources
+                {loading ? '…' : metrics?.connected_sources ?? 0} sources
               </strong>
               . Ask anything about labs, products or known issues.
             </p>

@@ -1,7 +1,7 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import {
   Database, RefreshCw, CheckCircle2, AlertCircle,
-  Trash2, Search, FileText, Layers,
+  Trash2, Search, FileText, Layers, Upload,
 } from 'lucide-react'
 import { knowledgeApi } from '../../services/api'
 import type { KnowledgeBlob, IngestionResult } from '../../types'
@@ -21,6 +21,13 @@ function fileExt(name: string): string {
   return name.includes('.') ? name.split('.').pop()!.toUpperCase() : 'FILE'
 }
 
+interface ConfigStatus {
+  storage_configured: boolean
+  search_configured: boolean
+  openai_configured: boolean
+  storage_container: string
+}
+
 export default function KnowledgeBase() {
   const [blobs, setBlobs] = useState<KnowledgeBlob[]>([])
   const [loading, setLoading] = useState(true)
@@ -29,6 +36,10 @@ export default function KnowledgeBase() {
   const [syncingAll, setSyncingAll] = useState(false)
   const [lastResult, setLastResult] = useState<IngestionResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [uploadSuccess, setUploadSuccess] = useState<string | null>(null)
+  const [configStatus, setConfigStatus] = useState<ConfigStatus | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -43,7 +54,10 @@ export default function KnowledgeBase() {
     }
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    load()
+    knowledgeApi.getConfigStatus().then(({ data }) => setConfigStatus(data)).catch(() => {})
+  }, [load])
 
   const handleSyncAll = async () => {
     setSyncingAll(true)
@@ -86,6 +100,24 @@ export default function KnowledgeBase() {
     }
   }
 
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (fileInputRef.current) fileInputRef.current.value = ''
+    if (!file) return
+    setUploading(true)
+    setError(null)
+    setUploadSuccess(null)
+    try {
+      await knowledgeApi.upload(file)
+      setUploadSuccess(`"${file.name}" uploaded. Use Sync to index it.`)
+      await load()
+    } catch {
+      setError(`Failed to upload "${file.name}". Supported: PDF, DOCX, MD, TXT, XLSX.`)
+    } finally {
+      setUploading(false)
+    }
+  }
+
   const filtered = blobs.filter(
     (b) => !search || b.blob_name.toLowerCase().includes(search.toLowerCase())
   )
@@ -99,6 +131,22 @@ export default function KnowledgeBase() {
       <div className="flex items-center justify-between">
         <h2 className="text-base font-semibold text-gray-900">Knowledge Base</h2>
         <div className="flex items-center gap-2">
+          {/* Hidden file input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf,.docx,.doc,.md,.txt,.xlsx,.xls"
+            className="hidden"
+            onChange={handleUpload}
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors disabled:opacity-50"
+          >
+            <Upload size={13} className={uploading ? 'animate-pulse' : ''} />
+            {uploading ? 'Uploading…' : '+ Upload'}
+          </button>
           <button
             onClick={load}
             disabled={loading}
@@ -118,6 +166,27 @@ export default function KnowledgeBase() {
         </div>
       </div>
 
+      {/* Azure configuration status banner */}
+      {configStatus && (!configStatus.storage_configured || !configStatus.search_configured || !configStatus.openai_configured) && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800 space-y-2">
+          <p className="font-semibold flex items-center gap-2">
+            <AlertCircle size={15} className="text-amber-500" />
+            Azure credentials not configured — update <code className="bg-amber-100 px-1.5 py-0.5 rounded font-mono text-xs">backend/.env</code> then run <code className="bg-amber-100 px-1.5 py-0.5 rounded font-mono text-xs">docker compose restart backend</code>
+          </p>
+          <div className="flex gap-4 text-xs">
+            <span className={configStatus.storage_configured ? 'text-green-700' : 'text-red-600'}>
+              {configStatus.storage_configured ? '✓' : '✗'} Azure Storage (AZURE_STORAGE_CONNECTION_STRING)
+            </span>
+            <span className={configStatus.search_configured ? 'text-green-700' : 'text-red-600'}>
+              {configStatus.search_configured ? '✓' : '✗'} AI Search (AZURE_SEARCH_ENDPOINT + AZURE_SEARCH_API_KEY)
+            </span>
+            <span className={configStatus.openai_configured ? 'text-green-700' : 'text-red-600'}>
+              {configStatus.openai_configured ? '✓' : '✗'} Azure OpenAI (AZURE_OPENAI_ENDPOINT + AZURE_OPENAI_API_KEY)
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Result banner */}
       {lastResult && (
         <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-sm text-green-800">
@@ -125,6 +194,11 @@ export default function KnowledgeBase() {
           {lastResult.errors.length > 0 && (
             <span className="ml-1 text-orange-700"> {lastResult.errors.length} error(s).</span>
           )}
+        </div>
+      )}
+      {uploadSuccess && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-800">
+          {uploadSuccess}
         </div>
       )}
       {error && (

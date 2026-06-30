@@ -1,82 +1,128 @@
-import { useEffect } from 'react'
-import { X, MoreVertical, Loader2 } from 'lucide-react'
+import { useState } from 'react'
+import { Loader2, HeadphonesIcon, CheckCircle2, AlertCircle, Clock } from 'lucide-react'
 import MessageList from './MessageList'
 import MessageInput from './MessageInput'
 import { useChat } from '../../hooks/useChat'
 import { useChatStore } from '../../store/chatStore'
-import { useAuthStore } from '../../store/authStore'
+import type { TicketStatus } from '../../types'
+
+const TICKET_STATUS_INFO: Record<TicketStatus, { label: string; color: string; icon: React.ReactNode }> = {
+  new:                    { label: 'AI Support',        color: 'text-blue-400',   icon: <span className="w-2 h-2 rounded-full bg-green-400 inline-block" /> },
+  in_progress_ai:         { label: 'AI Support',        color: 'text-blue-400',   icon: <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse inline-block" /> },
+  resolved_by_ai:         { label: 'Resolved',          color: 'text-green-400',  icon: <CheckCircle2 size={12} className="text-green-400 inline" /> },
+  open:                   { label: 'Awaiting Support',  color: 'text-orange-400', icon: <Clock size={12} className="text-orange-400 inline" /> },
+  transferred_to_support: { label: 'Support is helping you', color: 'text-purple-400', icon: <HeadphonesIcon size={12} className="text-purple-400 inline" /> },
+  l2_escalated:           { label: 'L2 Engineer',       color: 'text-yellow-400', icon: <AlertCircle size={12} className="text-yellow-400 inline" /> },
+  owner_escalated:        { label: 'Lab Owner',         color: 'text-red-400',    icon: <AlertCircle size={12} className="text-red-400 inline" /> },
+  closed:                 { label: 'Closed',            color: 'text-gray-400',   icon: <CheckCircle2 size={12} className="text-gray-400 inline" /> },
+}
+
+const HUMAN_STATUSES: TicketStatus[] = ['open', 'transferred_to_support', 'l2_escalated', 'owner_escalated']
 
 export default function ChatWidget() {
-  const { messages, isLoading, isStarting, sendMessage, closeSession } = useChat()
+  const { messages, isLoading, isStarting, sendMessage, raiseTicket, isRaising } = useChat()
   const { session, ticket } = useChatStore()
-  const { user, clearAuth } = useAuthStore()
+  const [showRaiseConfirm, setShowRaiseConfirm] = useState(false)
 
   const handleSuggestion = (text: string) => sendMessage(text)
 
-  const handleClose = async () => {
-    if (session) await closeSession()
-    clearAuth()
-    window.location.href = '/auth'
+  const handleRaise = async () => {
+    setShowRaiseConfirm(false)
+    await raiseTicket()
   }
+
+  const ticketStatus = ticket?.status ?? 'new'
+  const statusInfo = TICKET_STATUS_INFO[ticketStatus]
+  const isHumanHandling = HUMAN_STATUSES.includes(ticketStatus)
+  const canRaise = ticket && !isHumanHandling && ticketStatus !== 'resolved_by_ai' && ticketStatus !== 'closed'
 
   if (isStarting) {
     return (
-      <div className="w-[540px] h-[680px] bg-white rounded-2xl shadow-2xl border border-gray-100 flex items-center justify-center">
-        <div className="text-center space-y-3">
-          <div className="w-12 h-12 bg-primary-600 rounded-xl flex items-center justify-center mx-auto">
-            <span className="text-white font-bold text-sm">AI</span>
+      <div className="flex-1 flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <div className="w-16 h-16 bg-primary-600 rounded-2xl flex items-center justify-center mx-auto shadow-lg shadow-primary-900/50">
+            <span className="text-white font-bold text-xl">AI</span>
           </div>
-          <Loader2 size={20} className="animate-spin text-primary-500 mx-auto" />
-          <p className="text-sm text-gray-500">Starting session…</p>
+          <Loader2 size={24} className="animate-spin text-primary-400 mx-auto" />
+          <p className="text-slate-400 text-sm">Starting your support session…</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="w-[540px] h-[680px] bg-white rounded-2xl shadow-2xl border border-gray-100 flex flex-col overflow-hidden">
+    <div className="flex-1 flex flex-col h-screen max-w-4xl mx-auto w-full">
       {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-3.5 border-b border-gray-100 shrink-0">
-        <div className="w-9 h-9 rounded-full bg-primary-600 flex items-center justify-center">
-          <span className="text-white font-bold text-xs">AI</span>
+      <div className="flex items-center gap-4 px-6 py-4 border-b border-white/10">
+        <div className="w-10 h-10 rounded-xl bg-primary-600 flex items-center justify-center shadow-lg shadow-primary-900/50 shrink-0">
+          <span className="text-white font-bold text-sm">AI</span>
         </div>
-
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-gray-900 leading-tight">CloudLabs Assistant</p>
-          <p className="text-xs text-primary-600 flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
-            Online · AI-powered support
+          <p className="text-white font-semibold text-sm leading-tight">CloudLabs Lab Support</p>
+          <p className={`text-xs flex items-center gap-1.5 ${statusInfo.color}`}>
+            {statusInfo.icon}
+            {statusInfo.label}
+            {ticket && (
+              <span className="text-slate-500 font-mono ml-1">· #{ticket.id.slice(0, 8).toUpperCase()}</span>
+            )}
           </p>
         </div>
 
-        {ticket && (
-          <span className="text-[10px] text-gray-400 font-mono border border-gray-200 rounded px-1.5 py-0.5">
-            #{ticket.id.slice(0, 8).toUpperCase()}
-          </span>
-        )}
+        <div className="flex items-center gap-2 shrink-0">
+          {canRaise && (
+            showRaiseConfirm ? (
+              <div className="flex items-center gap-2 bg-orange-500/20 border border-orange-500/30 rounded-xl px-3 py-1.5">
+                <span className="text-xs text-orange-300">Raise to support?</span>
+                <button
+                  onClick={handleRaise}
+                  disabled={isRaising}
+                  className="text-xs font-semibold text-white bg-orange-500 hover:bg-orange-600 px-2 py-0.5 rounded-lg transition-colors"
+                >
+                  {isRaising ? 'Raising…' : 'Yes'}
+                </button>
+                <button
+                  onClick={() => setShowRaiseConfirm(false)}
+                  className="text-xs text-slate-400 hover:text-white transition-colors"
+                >
+                  No
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowRaiseConfirm(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-orange-300 border border-orange-500/30 hover:bg-orange-500/10 rounded-xl transition-colors"
+              >
+                <HeadphonesIcon size={12} />
+                Raise Support Ticket
+              </button>
+            )
+          )}
 
-        <div className="flex items-center gap-1">
-          <button className="w-7 h-7 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 transition-colors">
-            <MoreVertical size={14} />
-          </button>
-          <button
-            onClick={handleClose}
-            className="w-7 h-7 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 transition-colors"
-          >
-            <X size={14} />
-          </button>
+          {isHumanHandling && (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-purple-300 bg-purple-500/10 border border-purple-500/20 rounded-xl">
+              <HeadphonesIcon size={12} />
+              {ticketStatus === 'transferred_to_support' || ticketStatus === 'l2_escalated' || ticketStatus === 'owner_escalated'
+                ? 'Support team is helping you'
+                : 'Support team will contact you'}
+            </div>
+          )}
         </div>
       </div>
 
       {/* Messages */}
-      <MessageList
-        messages={messages}
-        isLoading={isLoading}
-        onSuggestion={handleSuggestion}
-      />
+      <div className="flex-1 overflow-hidden bg-white/5">
+        <MessageList
+          messages={messages}
+          isLoading={isLoading}
+          onSuggestion={handleSuggestion}
+          dark
+        />
+      </div>
 
       {/* Input */}
-      <MessageInput onSend={sendMessage} disabled={isLoading || !session} />
+      <div className="border-t border-white/10 bg-white/5">
+        <MessageInput onSend={sendMessage} disabled={isLoading || !session} dark />
+      </div>
     </div>
   )
 }

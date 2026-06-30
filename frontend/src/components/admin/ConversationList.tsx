@@ -10,6 +10,8 @@ const STATUS_COLORS: Record<TicketStatus, string> = {
   resolved_by_ai:         'bg-green-100 text-green-700',
   open:                   'bg-orange-100 text-orange-700',
   transferred_to_support: 'bg-purple-100 text-purple-700',
+  l2_escalated:           'bg-yellow-100 text-yellow-800',
+  owner_escalated:        'bg-red-100 text-red-700',
   closed:                 'bg-gray-100 text-gray-600',
 }
 
@@ -18,7 +20,9 @@ const STATUS_LABELS: Record<TicketStatus, string> = {
   in_progress_ai:         'In Progress',
   resolved_by_ai:         'Resolved by AI',
   open:                   'Open',
-  transferred_to_support: 'Transferred',
+  transferred_to_support: 'L1 Support',
+  l2_escalated:           'L2 Engineer',
+  owner_escalated:        'Lab Owner',
   closed:                 'Closed',
 }
 

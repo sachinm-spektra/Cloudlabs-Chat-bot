@@ -10,8 +10,10 @@ class TicketStatus(str, enum.Enum):
     new = "new"
     in_progress_ai = "in_progress_ai"
     resolved_by_ai = "resolved_by_ai"
-    open = "open"
-    transferred_to_support = "transferred_to_support"
+    open = "open"                          # raised to L1 support by user
+    transferred_to_support = "transferred_to_support"  # L1 support handling
+    l2_escalated = "l2_escalated"          # escalated to L2 engineer
+    owner_escalated = "owner_escalated"    # escalated to lab owner
     closed = "closed"
 
 

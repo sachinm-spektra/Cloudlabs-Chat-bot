@@ -3,10 +3,11 @@ uvicorn[standard]==0.32.0
 sqlalchemy==2.0.36
 asyncpg==0.30.0
 alembic==1.14.0
-pydantic==2.10.0
+pydantic[email]==2.10.0
 pydantic-settings==2.6.1
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
+bcrypt==3.2.2
 python-multipart==0.0.18
 openai==1.56.0
 azure-search-documents==11.6.0b8
