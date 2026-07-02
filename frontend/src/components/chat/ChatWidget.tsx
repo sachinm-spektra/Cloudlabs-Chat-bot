@@ -20,15 +20,22 @@ const TICKET_STATUS_INFO: Record<TicketStatus, { label: string; color: string; i
 const HUMAN_STATUSES: TicketStatus[] = ['open', 'transferred_to_support', 'l2_escalated', 'owner_escalated']
 
 export default function ChatWidget() {
-  const { messages, isLoading, isStarting, sendMessage, raiseTicket, isRaising } = useChat()
+  const { messages, isLoading, isStarting, sendMessage, raiseTicket, isRaising, editMessage, deleteMessage } = useChat()
   const { session, ticket } = useChatStore()
   const [showRaiseConfirm, setShowRaiseConfirm] = useState(false)
+  const [labName, setLabName] = useState('')
+  const [deploymentId, setDeploymentId] = useState('')
 
   const handleSuggestion = (text: string) => sendMessage(text)
 
+  const canSubmitRaise = labName.trim().length > 0 && deploymentId.trim().length > 0
+
   const handleRaise = async () => {
+    if (!canSubmitRaise) return
+    await raiseTicket(labName.trim(), deploymentId.trim())
     setShowRaiseConfirm(false)
-    await raiseTicket()
+    setLabName('')
+    setDeploymentId('')
   }
 
   const ticketStatus = ticket?.status ?? 'new'
@@ -69,33 +76,14 @@ export default function ChatWidget() {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          {canRaise && (
-            showRaiseConfirm ? (
-              <div className="flex items-center gap-2 bg-orange-500/20 border border-orange-500/30 rounded-xl px-3 py-1.5">
-                <span className="text-xs text-orange-300">Raise to support?</span>
-                <button
-                  onClick={handleRaise}
-                  disabled={isRaising}
-                  className="text-xs font-semibold text-white bg-orange-500 hover:bg-orange-600 px-2 py-0.5 rounded-lg transition-colors"
-                >
-                  {isRaising ? 'Raising…' : 'Yes'}
-                </button>
-                <button
-                  onClick={() => setShowRaiseConfirm(false)}
-                  className="text-xs text-slate-400 hover:text-white transition-colors"
-                >
-                  No
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setShowRaiseConfirm(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-orange-300 border border-orange-500/30 hover:bg-orange-500/10 rounded-xl transition-colors"
-              >
-                <HeadphonesIcon size={12} />
-                Raise Support Ticket
-              </button>
-            )
+          {canRaise && !showRaiseConfirm && (
+            <button
+              onClick={() => setShowRaiseConfirm(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-orange-300 border border-orange-500/30 hover:bg-orange-500/10 rounded-xl transition-colors"
+            >
+              <HeadphonesIcon size={12} />
+              Raise Support Ticket
+            </button>
           )}
 
           {isHumanHandling && (
@@ -109,12 +97,54 @@ export default function ChatWidget() {
         </div>
       </div>
 
+      {/* Raise ticket form */}
+      {canRaise && showRaiseConfirm && (
+        <div className="px-6 py-4 border-b border-white/10 bg-orange-500/10">
+          <p className="text-xs font-semibold text-orange-300 mb-2">
+            Raise to support — tell us which lab this is about
+          </p>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input
+              type="text"
+              value={labName}
+              onChange={(e) => setLabName(e.target.value)}
+              placeholder="Lab name"
+              className="flex-1 bg-white/10 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-400"
+            />
+            <input
+              type="text"
+              value={deploymentId}
+              onChange={(e) => setDeploymentId(e.target.value)}
+              placeholder="Deployment ID (DID)"
+              className="flex-1 bg-white/10 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-400"
+            />
+          </div>
+          <div className="flex items-center gap-2 mt-3">
+            <button
+              onClick={handleRaise}
+              disabled={!canSubmitRaise || isRaising}
+              className="text-xs font-semibold text-white bg-orange-500 hover:bg-orange-600 disabled:opacity-40 px-3 py-1.5 rounded-lg transition-colors"
+            >
+              {isRaising ? 'Raising…' : 'Raise Ticket'}
+            </button>
+            <button
+              onClick={() => setShowRaiseConfirm(false)}
+              className="text-xs text-slate-400 hover:text-white transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Messages */}
       <div className="flex-1 overflow-hidden bg-white/5">
         <MessageList
           messages={messages}
           isLoading={isLoading}
           onSuggestion={handleSuggestion}
+          onEdit={editMessage}
+          onDelete={deleteMessage}
           dark
         />
       </div>

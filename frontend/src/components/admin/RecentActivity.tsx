@@ -2,23 +2,8 @@ import { useEffect, useState } from 'react'
 import { Clock, Search } from 'lucide-react'
 import { adminApi } from '../../services/api'
 import type { ActivityItem } from '../../types'
+import type { AdminView } from '../../pages/AdminPage'
 import { formatDistanceToNow } from 'date-fns'
-
-const MOCK_ACTIVITY: ActivityItem[] = [
-  { id: '1', user_name: 'Priya Nair',    user_initials: 'PN', action: 'opened article',    detail: 'WiFi handoff failure on Lab-12',         timestamp: new Date(Date.now() - 2*60*1000).toISOString() },
-  { id: '2', user_name: 'Marcus Lee',    user_initials: 'ML', action: 'asked agent',       detail: '"Why does the spectrum analyzer drop calibration?"', timestamp: new Date(Date.now() - 8*60*1000).toISOString() },
-  { id: '3', user_name: 'Sofia Rossi',   user_initials: 'SR', action: 'synced source',     detail: 'Release Notes Q2-2025.xlsx',             timestamp: new Date(Date.now() - 21*60*1000).toISOString() },
-  { id: '4', user_name: 'Daniel Kim',    user_initials: 'DK', action: 'resolved issue',    detail: 'ISSUE-2041 Firmware rollback',           timestamp: new Date(Date.now() - 60*60*1000).toISOString() },
-  { id: '5', user_name: 'Anna Becker',   user_initials: 'AB', action: 'saved conversation',detail: 'BLE pairing troubleshooting',            timestamp: new Date(Date.now() - 3*60*60*1000).toISOString() },
-]
-
-const RECENT_SEARCHES = [
-  'How to recover Lab-07 after firmware crash?',
-  'Spectrum analyzer calibration drift on cold start',
-  'BLE pairing fails after firmware 4.12',
-  'WiFi 6E roaming handoff dropouts',
-  'Power supply ripple anomaly in Lab-22',
-]
 
 const COLORS = [
   'bg-blue-100 text-blue-700',
@@ -28,14 +13,36 @@ const COLORS = [
   'bg-rose-100 text-rose-700',
 ]
 
-export default function RecentActivity() {
-  const [activity, setActivity] = useState<ActivityItem[]>(MOCK_ACTIVITY)
+function extractSearchTerm(detail: string) {
+  const match = detail.match(/^"(.*)"$/)
+  return match ? match[1] : detail
+}
+
+interface Props {
+  onNavigate: (v: AdminView) => void
+  onOpenTicket: (ticketId: string) => void
+}
+
+export default function RecentActivity({ onNavigate, onOpenTicket }: Props) {
+  const [activity, setActivity] = useState<ActivityItem[]>([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     adminApi.getActivity()
       .then(({ data }) => setActivity(data))
-      .catch(() => {/* use mock */})
+      .catch(() => setActivity([]))
+      .finally(() => setLoading(false))
   }, [])
+
+  const recentSearches = activity
+    .filter((a) => a.action === 'asked agent')
+    .slice(0, 5)
+    .map((a) => ({ id: a.id, label: extractSearchTerm(a.detail), ticketId: a.ticket_id }))
+
+  const openActivity = (item: ActivityItem) => {
+    if (item.ticket_id) onOpenTicket(item.ticket_id)
+    else onNavigate('tickets')
+  }
 
   return (
     <div className="grid grid-cols-[1fr_320px] gap-4">
@@ -46,34 +53,48 @@ export default function RecentActivity() {
             <h3 className="text-sm font-semibold text-gray-900">Recent activity</h3>
             <p className="text-xs text-gray-500">What your team has been doing.</p>
           </div>
-          <button className="text-xs text-primary-600 hover:text-primary-700 font-medium">
+          <button
+            onClick={() => onNavigate('tickets')}
+            className="text-xs text-primary-600 hover:text-primary-700 font-medium"
+          >
             View all
           </button>
         </div>
 
-        <div className="space-y-3">
-          {activity.map((item, i) => (
-            <div key={item.id} className="flex items-start gap-3">
-              <div
-                className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-semibold shrink-0 ${
-                  COLORS[i % COLORS.length]
-                }`}
+        <div className="space-y-1">
+          {loading ? (
+            <p className="text-sm text-gray-400">Loading…</p>
+          ) : activity.length === 0 ? (
+            <p className="text-sm text-gray-400">No recent activity yet.</p>
+          ) : (
+            activity.map((item, i) => (
+              <button
+                key={item.id}
+                onClick={() => openActivity(item)}
+                title={item.ticket_id ? 'Open this ticket' : 'Open Tickets'}
+                className="w-full flex items-start gap-3 text-left hover:bg-gray-50 rounded-lg px-2 py-1.5 -mx-2 transition-colors"
               >
-                {item.user_initials}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm text-gray-700 truncate">
-                  <span className="font-medium">{item.user_name}</span>{' '}
-                  <span className="text-gray-500">{item.action}</span>{' '}
-                  <span className="font-medium text-gray-800">{item.detail}</span>
-                </p>
-              </div>
-              <div className="flex items-center gap-1 text-[11px] text-gray-400 shrink-0">
-                <Clock size={11} />
-                {formatDistanceToNow(new Date(item.timestamp), { addSuffix: true })}
-              </div>
-            </div>
-          ))}
+                <div
+                  className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-semibold shrink-0 ${
+                    COLORS[i % COLORS.length]
+                  }`}
+                >
+                  {item.user_initials}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-gray-700 truncate">
+                    <span className="font-medium">{item.user_name}</span>{' '}
+                    <span className="text-gray-500">{item.action}</span>{' '}
+                    <span className="font-medium text-gray-800">{item.detail}</span>
+                  </p>
+                </div>
+                <div className="flex items-center gap-1 text-[11px] text-gray-400 shrink-0">
+                  <Clock size={11} />
+                  {formatDistanceToNow(new Date(item.timestamp), { addSuffix: true })}
+                </div>
+              </button>
+            ))
+          )}
         </div>
       </div>
 
@@ -85,15 +106,23 @@ export default function RecentActivity() {
         </div>
 
         <div className="space-y-2.5">
-          {RECENT_SEARCHES.map((q) => (
-            <button
-              key={q}
-              className="w-full flex items-center gap-2.5 text-left hover:bg-gray-50 rounded-lg px-2 py-1.5 -mx-2 transition-colors group"
-            >
-              <Search size={13} className="text-gray-400 shrink-0" />
-              <span className="text-sm text-gray-700 group-hover:text-primary-700 truncate">{q}</span>
-            </button>
-          ))}
+          {loading ? (
+            <p className="text-sm text-gray-400">Loading…</p>
+          ) : recentSearches.length === 0 ? (
+            <p className="text-sm text-gray-400">No recent searches yet.</p>
+          ) : (
+            recentSearches.map((q) => (
+              <button
+                key={q.id}
+                onClick={() => (q.ticketId ? onOpenTicket(q.ticketId) : onNavigate('ai-chat'))}
+                title={q.ticketId ? 'Open this ticket' : 'Open AI Chat'}
+                className="w-full flex items-center gap-2.5 text-left hover:bg-gray-50 rounded-lg px-2 py-1.5 -mx-2 transition-colors group"
+              >
+                <Search size={13} className="text-gray-400 shrink-0" />
+                <span className="text-sm text-gray-700 group-hover:text-primary-700 truncate">{q.label}</span>
+              </button>
+            ))
+          )}
         </div>
       </div>
     </div>

@@ -11,6 +11,8 @@ class TicketRead(BaseModel):
     user_name: Optional[str] = None
     user_email: Optional[str] = None
     status: TicketStatus
+    lab_name: Optional[str] = None
+    deployment_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     summary: Optional[str] = None
@@ -49,6 +51,7 @@ class ActivityItem(BaseModel):
     action: str
     detail: str
     timestamp: str
+    ticket_id: Optional[str] = None
 
 
 class TokenUsagePoint(BaseModel):

@@ -1,9 +1,10 @@
 import { useEffect, useState, useRef } from 'react'
-import { Search, Loader2, ChevronLeft, Send, RefreshCw, CheckCircle2 } from 'lucide-react'
+import { Search, Loader2, ChevronLeft, Send, RefreshCw, CheckCircle2, Pencil, Trash2, RotateCcw, Check, X } from 'lucide-react'
 import { adminApi } from '../../services/api'
 import type { Ticket, TicketStatus, Message } from '../../types'
 import { format } from 'date-fns'
 import { renderMarkdown } from '../../utils/markdown'
+import { parseSupportMessage } from '../../utils/supportMessage'
 
 const STATUS_COLORS: Record<TicketStatus, string> = {
   new:                    'bg-blue-100 text-blue-700',
@@ -36,7 +37,12 @@ const STATUS_FILTERS = [
   { label: 'All', value: '' },
 ]
 
-export default function IssueExplorer() {
+interface Props {
+  focusTicketId?: string | null
+  onFocusHandled?: () => void
+}
+
+export default function IssueExplorer({ focusTicketId, onFocusHandled }: Props) {
   const [tickets, setTickets] = useState<Ticket[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -50,16 +56,39 @@ export default function IssueExplorer() {
   const [statusDraft, setStatusDraft] = useState<string>('')
   const [updatingStatus, setUpdatingStatus] = useState(false)
   const [statusUpdated, setStatusUpdated] = useState(false)
+  const [reopening, setReopening] = useState(false)
+  const [transferDraft, setTransferDraft] = useState('transferred_to_support')
+  const [transferring, setTransferring] = useState(false)
+  const [transferred, setTransferred] = useState(false)
+  const [editingMsgId, setEditingMsgId] = useState<string | null>(null)
+  const [editDraft, setEditDraft] = useState('')
+  const [deletingMsgId, setDeletingMsgId] = useState<string | null>(null)
+  const [msgBusy, setMsgBusy] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    setLoading(true)
+    // While the user is searching, look across every status instead of just the active tab —
+    // otherwise a search for a ticket outside the current tab silently finds nothing.
+    const isSearching = search.trim().length > 0
+    const handle = setTimeout(() => {
+      setLoading(true)
+      adminApi
+        .getTickets({ limit: isSearching ? 200 : 100, status: isSearching ? undefined : (statusFilter || undefined) })
+        .then(({ data }) => setTickets(data.tickets))
+        .catch(() => {})
+        .finally(() => setLoading(false))
+    }, isSearching ? 250 : 0)
+    return () => clearTimeout(handle)
+  }, [statusFilter, search])
+
+  useEffect(() => {
+    if (!focusTicketId) return
     adminApi
-      .getTickets({ limit: 100, status: statusFilter || undefined })
-      .then(({ data }) => setTickets(data.tickets))
+      .getTicket(focusTicketId)
+      .then(({ data }) => setSelected(data))
       .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [statusFilter])
+      .finally(() => onFocusHandled?.())
+  }, [focusTicketId])
 
   const loadMessages = async (ticket: Ticket) => {
     setMsgLoading(true)
@@ -115,6 +144,75 @@ export default function IssueExplorer() {
     }
   }
 
+  const handleTransfer = async () => {
+    if (!selected || !transferDraft || transferring) return
+    setTransferring(true)
+    try {
+      await adminApi.updateTicketStatus(selected.id, transferDraft)
+      const { data } = await adminApi.getTicket(selected.id)
+      setSelected(data)
+      setTickets((prev) => prev.map((t) => (t.id === data.id ? data : t)))
+      setTransferred(true)
+      setTimeout(() => setTransferred(false), 2000)
+    } catch {
+      // ignore
+    } finally {
+      setTransferring(false)
+    }
+  }
+
+  const handleReopen = async () => {
+    if (!selected || reopening) return
+    setReopening(true)
+    try {
+      await adminApi.updateTicketStatus(selected.id, 'open')
+      const { data } = await adminApi.getTicket(selected.id)
+      setSelected(data)
+      setStatusDraft(data.status)
+      setTickets((prev) => prev.map((t) => (t.id === data.id ? data : t)))
+    } catch {
+      // ignore
+    } finally {
+      setReopening(false)
+    }
+  }
+
+  const startEditMessage = (m: Message) => {
+    const { content } = parseSupportMessage(m.content)
+    setEditingMsgId(m.id)
+    setEditDraft(content)
+  }
+
+  const saveEditMessage = async () => {
+    if (!selected || !editingMsgId) return
+    const trimmed = editDraft.trim()
+    if (!trimmed) return
+    setMsgBusy(true)
+    try {
+      await adminApi.updateSessionMessage(selected.session_id, editingMsgId, trimmed)
+      await loadMessages(selected)
+      setEditingMsgId(null)
+    } catch {
+      // ignore
+    } finally {
+      setMsgBusy(false)
+    }
+  }
+
+  const deleteMessage = async (messageId: string) => {
+    if (!selected) return
+    setMsgBusy(true)
+    try {
+      await adminApi.deleteSessionMessage(selected.session_id, messageId)
+      await loadMessages(selected)
+    } catch {
+      // ignore
+    } finally {
+      setMsgBusy(false)
+      setDeletingMsgId(null)
+    }
+  }
+
   const handleSend = async () => {
     if (!reply.trim() || !selected || sending) return
     const text = reply.trim()
@@ -161,6 +259,12 @@ export default function IssueExplorer() {
             </span>
           </div>
           <div className="p-4 text-xs text-gray-500 space-y-1.5">
+            {selected.lab_name && (
+              <p><span className="font-medium text-gray-700">Lab:</span> {selected.lab_name}</p>
+            )}
+            {selected.deployment_id && (
+              <p><span className="font-medium text-gray-700">Deployment ID:</span> {selected.deployment_id}</p>
+            )}
             <p><span className="font-medium text-gray-700">Created:</span> {format(new Date(selected.created_at), 'MMM d, h:mm aa')}</p>
             <p><span className="font-medium text-gray-700">Updated:</span> {format(new Date(selected.updated_at), 'MMM d, h:mm aa')}</p>
             {selected.message_count != null && (
@@ -187,6 +291,39 @@ export default function IssueExplorer() {
             >
               {updatingStatus ? <Loader2 size={12} className="animate-spin" /> : statusUpdated ? <CheckCircle2 size={12} /> : null}
               {updatingStatus ? 'Updating…' : statusUpdated ? 'Updated!' : 'Update Status'}
+            </button>
+
+            {(selected.status === 'closed' || selected.status === 'resolved_by_ai') && (
+              <button
+                onClick={handleReopen}
+                disabled={reopening}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-orange-600 border border-orange-200 hover:bg-orange-50 disabled:opacity-50 rounded-lg transition-colors"
+              >
+                {reopening ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />}
+                {reopening ? 'Reopening…' : 'Reopen Ticket'}
+              </button>
+            )}
+          </div>
+
+          {/* Transfer */}
+          <div className="p-4 border-t border-gray-100 space-y-2">
+            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Transfer</p>
+            <select
+              value={transferDraft}
+              onChange={(e) => setTransferDraft(e.target.value)}
+              className="w-full text-sm border border-gray-200 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
+            >
+              <option value="transferred_to_support">L1 Support</option>
+              <option value="l2_escalated">L2 Engineer</option>
+              <option value="owner_escalated">Lab Owner</option>
+            </select>
+            <button
+              onClick={handleTransfer}
+              disabled={transferring || transferDraft === selected.status}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 disabled:opacity-50 rounded-lg transition-colors"
+            >
+              {transferring ? <Loader2 size={12} className="animate-spin" /> : transferred ? <CheckCircle2 size={12} /> : null}
+              {transferring ? 'Transferring…' : transferred ? 'Transferred!' : 'Transfer'}
             </button>
           </div>
         </div>
@@ -218,12 +355,11 @@ export default function IssueExplorer() {
               </div>
             ) : (
               messages.map((m) => {
-                const isSupport = m.role === 'assistant' && m.content.startsWith('[Support]')
-                const displayContent = isSupport ? m.content.replace(/^\[Support\]\s*/, '') : m.content
+                const { isSupport, senderName, content: displayContent } = parseSupportMessage(m.content)
                 const isUser = m.role === 'user'
                 const avatarLabel = isUser
                   ? (selected.user_name?.[0] ?? 'U').toUpperCase()
-                  : isSupport ? 'S' : 'AI'
+                  : isSupport ? senderName[0]?.toUpperCase() : 'AI'
                 const avatarClass = isUser
                   ? 'bg-primary-100 text-primary-700'
                   : isSupport ? 'bg-purple-100 text-purple-700' : 'bg-gray-200 text-gray-600'
@@ -232,18 +368,62 @@ export default function IssueExplorer() {
                   : isSupport
                     ? 'bg-purple-50 border border-purple-100 text-purple-900 rounded-tl-sm'
                     : 'bg-gray-50 border border-gray-100 text-gray-800 rounded-tl-sm'
+                const isEditingThis = editingMsgId === m.id
                 return (
-                  <div key={m.id} className={`flex gap-2 ${isUser ? 'flex-row-reverse' : ''}`}>
+                  <div key={m.id} className={`flex gap-2 group ${isUser ? 'flex-row-reverse' : ''}`}>
                     <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 mt-0.5 text-[10px] font-bold ${avatarClass}`}>
                       {avatarLabel}
                     </div>
-                    <div className={`max-w-[75%] px-3 py-2 rounded-xl text-sm leading-relaxed break-words ${bubbleClass}`}>
-                      {isUser ? displayContent : renderMarkdown(displayContent)}
-                      <p className={`text-[10px] mt-1 ${isUser ? 'text-primary-200' : 'text-gray-400'}`}>
-                        {format(new Date(m.created_at), 'hh:mm aa')}
-                        {isSupport && <span className="ml-1 font-semibold">· Support</span>}
-                      </p>
-                    </div>
+                    {isEditingThis ? (
+                      <div className="max-w-[75%] w-full min-w-[200px]">
+                        <textarea
+                          autoFocus
+                          value={editDraft}
+                          onChange={(e) => setEditDraft(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEditMessage() }
+                            if (e.key === 'Escape') setEditingMsgId(null)
+                          }}
+                          rows={2}
+                          className="w-full text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 resize-none focus:outline-none focus:ring-2 focus:ring-primary-500"
+                        />
+                        <div className="flex items-center justify-end gap-2 mt-1">
+                          <button onClick={() => setEditingMsgId(null)} className="text-[11px] text-gray-500 hover:text-gray-800">Cancel</button>
+                          <button
+                            onClick={saveEditMessage}
+                            disabled={msgBusy || !editDraft.trim()}
+                            className="flex items-center gap-1 text-[11px] font-semibold text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50 px-2 py-1 rounded-lg"
+                          >
+                            {msgBusy ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
+                            Save
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className={`max-w-[75%] px-3 py-2 rounded-xl text-sm leading-relaxed break-words ${bubbleClass}`}>
+                        {isUser ? displayContent : renderMarkdown(displayContent)}
+                        <div className={`flex items-center gap-1.5 mt-1 ${isUser ? 'justify-end' : ''}`}>
+                          <p className={`text-[10px] ${isUser ? 'text-primary-200' : 'text-gray-400'}`}>
+                            {format(new Date(m.created_at), 'hh:mm aa')}
+                            {isSupport && <span className="ml-1 font-semibold">· {senderName}</span>}
+                          </p>
+                          {isSupport && (
+                            deletingMsgId === m.id ? (
+                              <span className="flex items-center gap-1">
+                                <span className="text-[10px] text-gray-500">Delete?</span>
+                                <button onClick={() => deleteMessage(m.id)} disabled={msgBusy} className="text-[10px] font-semibold text-red-500 hover:text-red-600">Yes</button>
+                                <button onClick={() => setDeletingMsgId(null)} className="text-gray-400 hover:text-gray-700"><X size={10} /></button>
+                              </span>
+                            ) : (
+                              <span className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button onClick={() => startEditMessage(m)} className="text-gray-400 hover:text-gray-700" title="Edit"><Pencil size={10} /></button>
+                                <button onClick={() => setDeletingMsgId(m.id)} className="text-gray-400 hover:text-red-500" title="Delete"><Trash2 size={10} /></button>
+                              </span>
+                            )
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )
               })
