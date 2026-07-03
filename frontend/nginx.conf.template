@@ -9,6 +9,10 @@ server {
     }
 
     location /api/ {
+        # Required when BACKEND_URL is https:// (e.g. an Azure Container Apps FQDN) —
+        # nginx doesn't send SNI to HTTPS upstreams by default, and Azure's shared
+        # ingress needs it to route to the right app, otherwise it resets the handshake.
+        proxy_ssl_server_name on;
         proxy_pass ${BACKEND_URL}/api/;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
