@@ -19,12 +19,19 @@ def _get_client() -> AsyncAzureOpenAI:
     return _client
 
 
-SYSTEM_PROMPT = """You are the CloudLabs AI Assistant — a helpful support agent for CloudLabs customers.
+BASE_SYSTEM_PROMPT = """You are the CloudLabs AI Assistant — a helpful support agent for CloudLabs customers.
 Answer questions about lab provisioning, deployments, LMS integration, billing, and Azure Lab Services.
 Ground your answers in the retrieved knowledge context provided.
 If the context does not contain relevant information, say so honestly.
 Keep responses concise, clear, and actionable. Format using markdown where helpful.
-Do not make up information. If uncertain, recommend contacting the support team."""
+Do not make up information."""
+
+# Shown to end users in the customer-facing chat widget: steer them to the in-app escalation
+# path instead of surfacing staff email addresses that may appear in ingested knowledge docs.
+CONTACT_RESTRICTION_PROMPT = """
+Never share personal email addresses, phone numbers, or tell the user to email someone for support — even if such details appear in the retrieved context. If you cannot resolve the issue, or the user asks how to reach support, tell them to click the "Raise Support Ticket" button in the top-right of this chat so the support team can follow up directly."""
+
+FALLBACK_CONTACT_PROMPT = "\nIf uncertain, recommend contacting the support team."
 
 
 async def get_openai_response(
@@ -32,6 +39,7 @@ async def get_openai_response(
     history: list[Any],
     chunks: list[dict],
     attachment_context: str = "",
+    restrict_contact_info: bool = True,
 ) -> dict:
     if not settings.azure_openai_endpoint:
         return {
@@ -54,7 +62,10 @@ async def get_openai_response(
             context_parts.append(f"[{i}] {c.get('source_title', '')}: {c.get('content', '')}")
         context_text = "\n\n".join(context_parts)
 
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    system_prompt = BASE_SYSTEM_PROMPT + (
+        CONTACT_RESTRICTION_PROMPT if restrict_contact_info else FALLBACK_CONTACT_PROMPT
+    )
+    messages = [{"role": "system", "content": system_prompt}]
 
     if context_text:
         messages.append({

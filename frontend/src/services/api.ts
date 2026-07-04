@@ -50,11 +50,19 @@ export const authApi = {
 
   me: (token?: string) =>
     api.get<User>('/auth/me', token ? { headers: { Authorization: `Bearer ${token}` } } : undefined),
+
+  updateMe: (name: string) => api.put<User>('/auth/me', { name }),
+
+  changePassword: (currentPassword: string, newPassword: string) =>
+    api.post('/auth/change-password', { current_password: currentPassword, new_password: newPassword }),
 }
 
 export const ticketApi = {
-  raise: (ticketId: string) =>
-    api.post<{ status: string; message: string }>(`/tickets/${ticketId}/raise`),
+  raise: (ticketId: string, labName: string, deploymentId: string) =>
+    api.post<{ status: string; message: string }>(`/tickets/${ticketId}/raise`, {
+      lab_name: labName,
+      deployment_id: deploymentId,
+    }),
 
   getById: (ticketId: string) =>
     api.get<Ticket>(`/tickets/${ticketId}`),
@@ -66,10 +74,11 @@ export const sessionApi = {
   getMessages: (sessionId: string) =>
     api.get<Message[]>(`/sessions/${sessionId}/messages`),
 
-  sendMessage: (sessionId: string, content: string, attachmentIds?: string[]) =>
+  sendMessage: (sessionId: string, content: string, attachmentIds?: string[], messageId?: string) =>
     api.post<Message>(`/sessions/${sessionId}/messages`, {
       content,
       attachment_ids: attachmentIds ?? [],
+      message_id: messageId,
     }),
 
   close: (sessionId: string, satisfactionRating?: number, comment?: string) =>
@@ -77,6 +86,12 @@ export const sessionApi = {
       satisfaction_rating: satisfactionRating,
       comment,
     }),
+
+  updateMessage: (sessionId: string, messageId: string, content: string) =>
+    api.put<Message>(`/sessions/${sessionId}/messages/${messageId}`, { content }),
+
+  deleteMessage: (sessionId: string, messageId: string) =>
+    api.delete(`/sessions/${sessionId}/messages/${messageId}`),
 }
 
 export const fileApi = {
@@ -118,6 +133,12 @@ export const adminApi = {
   sendSessionMessage: (sessionId: string, content: string) =>
     api.post<Message>(`/admin/sessions/${sessionId}/messages`, { content }),
 
+  updateSessionMessage: (sessionId: string, messageId: string, content: string) =>
+    api.put<Message>(`/admin/sessions/${sessionId}/messages/${messageId}`, { content }),
+
+  deleteSessionMessage: (sessionId: string, messageId: string) =>
+    api.delete(`/admin/sessions/${sessionId}/messages/${messageId}`),
+
   getOpenTicketCount: () =>
     api.get<{ count: number }>('/admin/tickets/open-count'),
 
@@ -135,6 +156,9 @@ export const adminApi = {
 
   updateTicketStatus: (ticketId: string, status: string) =>
     api.put<{ status: string }>(`/admin/tickets/${ticketId}/status`, { status }),
+
+  getTicketStatusBreakdown: () =>
+    api.get<Record<string, number>>('/admin/tickets/status-breakdown'),
 }
 
 export const knowledgeApi = {

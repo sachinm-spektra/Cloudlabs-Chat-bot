@@ -1,5 +1,16 @@
-import { LayoutDashboard, MessageSquare, BookOpen, AlertCircle, BarChart3, Settings, Sparkles } from 'lucide-react'
+import { useState } from 'react'
+import { LayoutDashboard, MessageSquare, BookOpen, AlertCircle, BarChart3, Settings, LogOut } from 'lucide-react'
 import type { AdminView } from '../../pages/AdminPage'
+import { useAuthStore } from '../../store/authStore'
+
+function initials(name: string) {
+  return name
+    .split(' ')
+    .map((n) => n[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2)
+}
 
 interface NavItem {
   id: AdminView
@@ -23,6 +34,9 @@ interface Props {
 }
 
 export default function Sidebar({ active, onNavigate }: Props) {
+  const { user, clearAuth } = useAuthStore()
+  const [showMenu, setShowMenu] = useState(false)
+
   return (
     <aside className="w-48 bg-white border-r border-gray-100 flex flex-col shrink-0 h-screen">
       {/* Brand */}
@@ -77,17 +91,41 @@ export default function Sidebar({ active, onNavigate }: Props) {
         })}
       </nav>
 
-      {/* Footer tip */}
-      <div className="p-3 mt-auto">
-        <div className="bg-primary-50 rounded-xl p-3">
-          <div className="flex items-center gap-2 mb-1.5">
-            <Sparkles size={13} className="text-primary-500" />
-            <span className="text-xs font-semibold text-primary-700">AI Pro Tips</span>
+      {/* Logged-in user */}
+      <div className="p-3 mt-auto relative">
+        {showMenu && (
+          <>
+            <div className="fixed inset-0 z-10" onClick={() => setShowMenu(false)} />
+            <div className="absolute left-3 right-3 bottom-[4.25rem] bg-white border border-gray-200 rounded-xl shadow-lg z-20 overflow-hidden">
+              <button
+                onClick={() => { setShowMenu(false); onNavigate('settings') }}
+                className="w-full flex items-center gap-2 px-3.5 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                <Settings size={14} className="text-gray-400" />
+                Settings
+              </button>
+              <button
+                onClick={clearAuth}
+                className="w-full flex items-center gap-2 px-3.5 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors border-t border-gray-50"
+              >
+                <LogOut size={14} />
+                Sign out
+              </button>
+            </div>
+          </>
+        )}
+        <button
+          onClick={() => setShowMenu((v) => !v)}
+          className="w-full flex items-center gap-2.5 bg-gray-50 hover:bg-gray-100 rounded-xl p-2.5 transition-colors text-left"
+        >
+          <div className="w-8 h-8 rounded-full bg-primary-600 flex items-center justify-center shrink-0">
+            <span className="text-white text-[10px] font-bold">{user ? initials(user.name) : 'U'}</span>
           </div>
-          <p className="text-[11px] text-primary-600 leading-tight">
-            Press <kbd className="font-mono bg-primary-100 px-1 rounded text-[10px]">/</kbd> anywhere to focus · search across labs.
-          </p>
-        </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold text-gray-900 truncate">{user?.name ?? 'Admin'}</p>
+            <p className="text-[10px] text-gray-500 truncate">{user?.email ?? ''}</p>
+          </div>
+        </button>
       </div>
     </aside>
   )

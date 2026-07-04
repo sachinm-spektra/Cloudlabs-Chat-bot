@@ -69,6 +69,8 @@ export interface Ticket {
   user_name?: string
   user_email?: string
   status: TicketStatus
+  lab_name?: string
+  deployment_id?: string
   created_at: string
   updated_at: string
   summary?: string
@@ -108,6 +110,7 @@ export interface ActivityItem {
   action: string
   detail: string
   timestamp: string
+  ticket_id?: string
 }
 
 export interface TokenUsagePoint {

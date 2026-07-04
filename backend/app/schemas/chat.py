@@ -51,6 +51,11 @@ class SessionRead(BaseModel):
 class SendMessageRequest(BaseModel):
     content: str
     attachment_ids: List[str] = []
+    message_id: Optional[str] = None
+
+
+class UpdateMessageRequest(BaseModel):
+    content: str
 
 
 class CloseSessionRequest(BaseModel):

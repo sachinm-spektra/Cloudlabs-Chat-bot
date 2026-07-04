@@ -5,9 +5,20 @@ import {
 } from 'recharts'
 import { adminApi } from '../../services/api'
 import type { TokenUsagePoint, AdminMetrics } from '../../types'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Ticket, CheckCircle2, Clock, MessageCircle } from 'lucide-react'
 
-const PIE_COLORS = ['#7c3aed', '#a78bfa', '#c4b5fd']
+const PIE_COLORS = ['#22c55e', '#f97316', '#a855f7', '#eab308', '#ef4444', '#3b82f6', '#64748b', '#7c3aed']
+
+const STATUS_LABELS: Record<string, string> = {
+  new: 'New',
+  in_progress_ai: 'In Progress (AI)',
+  resolved_by_ai: 'Resolved by AI',
+  open: 'Open',
+  transferred_to_support: 'L1 Support',
+  l2_escalated: 'L2 Engineer',
+  owner_escalated: 'Lab Owner',
+  closed: 'Closed',
+}
 
 function generateMockUsage(): TokenUsagePoint[] {
   return Array.from({ length: 14 }, (_, i) => {
@@ -27,18 +38,25 @@ function generateMockUsage(): TokenUsagePoint[] {
 export default function Analytics() {
   const [usage, setUsage] = useState<TokenUsagePoint[]>([])
   const [metrics, setMetrics] = useState<AdminMetrics | null>(null)
+  const [statusBreakdown, setStatusBreakdown] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    Promise.all([adminApi.getTokenUsage(14), adminApi.getMetrics()])
-      .then(([u, m]) => {
-        setUsage(u.data.length ? u.data : generateMockUsage())
-        setMetrics(m.data)
-      })
-      .catch(() => {
-        setUsage(generateMockUsage())
-      })
-      .finally(() => setLoading(false))
+    const refresh = () => {
+      Promise.all([adminApi.getTokenUsage(14), adminApi.getMetrics(), adminApi.getTicketStatusBreakdown()])
+        .then(([u, m, s]) => {
+          setUsage(u.data.length ? u.data : generateMockUsage())
+          setMetrics(m.data)
+          setStatusBreakdown(s.data)
+        })
+        .catch(() => {
+          setUsage((prev) => (prev.length ? prev : generateMockUsage()))
+        })
+        .finally(() => setLoading(false))
+    }
+    refresh()
+    const interval = setInterval(refresh, 30_000)
+    return () => clearInterval(interval)
   }, [])
 
   if (loading) {
@@ -49,17 +67,41 @@ export default function Analytics() {
     )
   }
 
-  const ticketData = metrics
-    ? [
-        { name: 'Resolved by AI', value: metrics.tickets_resolved_by_ai },
-        { name: 'Open', value: metrics.open_tickets },
-        { name: 'Transferred', value: metrics.transferred_tickets },
-      ]
-    : []
+  const totalTickets = Object.values(statusBreakdown).reduce((sum, n) => sum + n, 0)
+
+  const ticketData = Object.entries(statusBreakdown)
+    .filter(([, count]) => count > 0)
+    .map(([status, count]) => ({ name: STATUS_LABELS[status] ?? status, value: count }))
+
+  const summaryCards = [
+    { label: 'TOTAL LAB TICKETS', value: totalTickets, icon: <Ticket size={16} className="text-gray-400" /> },
+    { label: 'SOLVED BY AI', value: metrics?.tickets_resolved_by_ai ?? 0, icon: <CheckCircle2 size={16} className="text-emerald-500" /> },
+    { label: 'OPEN', value: metrics?.open_tickets ?? 0, icon: <Clock size={16} className="text-orange-500" /> },
+    { label: 'TOTAL CHAT SESSIONS', value: metrics?.total_sessions ?? 0, icon: <MessageCircle size={16} className="text-primary-500" /> },
+  ]
 
   return (
     <div className="space-y-6 max-w-5xl">
-      <h2 className="text-base font-semibold text-gray-900">Analytics</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-semibold text-gray-900">Analytics</h2>
+        <span className="flex items-center gap-1.5 text-xs text-emerald-600 font-medium">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+          Live · refreshes every 30s
+        </span>
+      </div>
+
+      {/* Real-time summary */}
+      <div className="grid grid-cols-4 gap-4">
+        {summaryCards.map((c) => (
+          <div key={c.label} className="bg-white rounded-xl border border-gray-100 px-5 py-4 flex items-start justify-between">
+            <div>
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-2">{c.label}</p>
+              <p className="text-2xl font-bold text-gray-900">{c.value.toLocaleString()}</p>
+            </div>
+            <div className="mt-0.5">{c.icon}</div>
+          </div>
+        ))}
+      </div>
 
       {/* Token usage chart */}
       <div className="bg-white rounded-2xl border border-gray-100 p-5">
@@ -88,19 +130,33 @@ export default function Analytics() {
       </div>
 
       <div className="grid grid-cols-2 gap-6">
-        {/* Ticket status pie */}
+        {/* Ticket resolution */}
         <div className="bg-white rounded-2xl border border-gray-100 p-5">
-          <h3 className="text-sm font-semibold text-gray-900 mb-4">Ticket resolution</h3>
-          <ResponsiveContainer width="100%" height={200}>
-            <PieChart>
-              <Pie data={ticketData} cx="50%" cy="50%" innerRadius={55} outerRadius={80} dataKey="value" paddingAngle={3} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
-                {ticketData.map((_, i) => (
-                  <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip />
-            </PieChart>
-          </ResponsiveContainer>
+          <h3 className="text-sm font-semibold text-gray-900">Ticket resolution</h3>
+          <p className="text-xs text-gray-400 mb-2">{totalTickets.toLocaleString()} tickets total</p>
+          {ticketData.length === 0 ? (
+            <div className="flex items-center justify-center h-[240px] text-sm text-gray-400">
+              No tickets yet
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={240}>
+              <PieChart margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
+                <Pie data={ticketData} cx="50%" cy="46%" innerRadius={55} outerRadius={80} dataKey="value" paddingAngle={3}>
+                  {ticketData.map((_, i) => (
+                    <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip formatter={(v: number, _name, entry) => [`${v} (${((v / totalTickets) * 100).toFixed(0)}%)`, entry.payload.name]} />
+                <Legend
+                  verticalAlign="bottom"
+                  align="center"
+                  iconType="circle"
+                  iconSize={8}
+                  wrapperStyle={{ fontSize: 11, lineHeight: '18px' }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          )}
         </div>
 
         {/* Daily sessions bar */}

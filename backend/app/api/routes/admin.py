@@ -137,6 +137,8 @@ async def get_tickets(
                 user_name=t.user.name if t.user else None,
                 user_email=t.user.email if t.user else None,
                 status=t.status,
+                lab_name=t.lab_name,
+                deployment_id=t.deployment_id,
                 created_at=t.created_at,
                 updated_at=t.updated_at,
                 message_count=count,
@@ -203,16 +205,17 @@ async def get_activity(
     db: AsyncSession = Depends(get_db),
 ):
     res = await db.execute(
-        select(ChatMessage, User)
+        select(ChatMessage, User, Ticket)
         .join(Session, ChatMessage.session_id == Session.id)
         .join(User, Session.user_id == User.id)
+        .outerjoin(Ticket, Ticket.session_id == ChatMessage.session_id)
         .where(ChatMessage.role == MessageRole.user)
         .order_by(ChatMessage.created_at.desc())
         .limit(20)
     )
     rows = res.all()
     items = []
-    for msg, user in rows:
+    for msg, user, ticket in rows:
         initials = "".join(p[0] for p in user.name.split()[:2]).upper()
         items.append(
             ActivityItem(
@@ -222,9 +225,22 @@ async def get_activity(
                 action="asked agent",
                 detail=f'"{msg.content[:60]}{"..." if len(msg.content) > 60 else ""}"',
                 timestamp=msg.created_at.isoformat(),
+                ticket_id=ticket.id if ticket else None,
             )
         )
     return items
+
+
+@router.get("/tickets/status-breakdown", response_model=dict[str, int])
+async def get_ticket_status_breakdown(
+    _: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    res = await db.execute(select(Ticket.status, func.count(Ticket.id)).group_by(Ticket.status))
+    counts = {status.value: 0 for status in TicketStatus}
+    for status, count in res.all():
+        counts[status.value] = count
+    return counts
 
 
 @router.get("/token-usage", response_model=list[TokenUsagePoint])
@@ -385,6 +401,8 @@ async def get_ticket(
         user_name=t.user.name if t.user else None,
         user_email=t.user.email if t.user else None,
         status=t.status,
+        lab_name=t.lab_name,
+        deployment_id=t.deployment_id,
         created_at=t.created_at,
         updated_at=t.updated_at,
         message_count=count,
@@ -442,7 +460,7 @@ async def admin_send_message(
         id=str(uuid.uuid4()),
         session_id=session_id,
         role=MessageRole.assistant,
-        content=f"[Support] {body.content}",
+        content=f"[Support:{current_admin.name}] {body.content}",
         prompt_tokens=0,
         completion_tokens=0,
     )
@@ -457,6 +475,58 @@ async def admin_send_message(
     loaded = res2.scalar_one()
     from ...schemas.chat import MessageRead
     return MessageRead.model_validate(loaded)
+
+
+@router.put("/sessions/{session_id}/messages/{message_id}")
+async def admin_edit_message(
+    session_id: str,
+    message_id: str,
+    body: AdminMessageRequest,
+    _: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from ...models.chat import ChatMessage
+    res = await db.execute(
+        select(ChatMessage).where(ChatMessage.id == message_id, ChatMessage.session_id == session_id)
+    )
+    msg = res.scalar_one_or_none()
+    if not msg or not msg.content.startswith("[Support"):
+        raise HTTPException(status_code=404, detail="Support message not found")
+
+    content = body.content.strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="Message content cannot be empty")
+    prefix = msg.content.split("]", 1)[0] + "]"
+    msg.content = f"{prefix} {content}"
+    await db.commit()
+
+    res2 = await db.execute(
+        select(ChatMessage)
+        .options(selectinload(ChatMessage.citations), selectinload(ChatMessage.attachments))
+        .where(ChatMessage.id == msg.id)
+    )
+    from ...schemas.chat import MessageRead
+    return MessageRead.model_validate(res2.scalar_one())
+
+
+@router.delete("/sessions/{session_id}/messages/{message_id}")
+async def admin_delete_message(
+    session_id: str,
+    message_id: str,
+    _: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from ...models.chat import ChatMessage
+    res = await db.execute(
+        select(ChatMessage).where(ChatMessage.id == message_id, ChatMessage.session_id == session_id)
+    )
+    msg = res.scalar_one_or_none()
+    if not msg or not msg.content.startswith("[Support"):
+        raise HTTPException(status_code=404, detail="Support message not found")
+
+    await db.delete(msg)
+    await db.commit()
+    return {"status": "deleted"}
 
 
 # ── Ticket Escalation ────────────────────────────────────────────────────────
@@ -529,6 +599,7 @@ async def admin_ai_query(
         history=history,
         chunks=chunks,
         attachment_context="",
+        restrict_contact_info=False,
     )
     citations = [
         {"source_title": c.get("source_title", ""), "source_url": c.get("source_url")}

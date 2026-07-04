@@ -24,6 +24,8 @@ class Ticket(Base):
     session_id: Mapped[str] = mapped_column(String, ForeignKey("sessions.id"), nullable=False, index=True, unique=True)
     user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), nullable=False, index=True)
     status: Mapped[TicketStatus] = mapped_column(Enum(TicketStatus), default=TicketStatus.new)
+    lab_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    deployment_id: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 

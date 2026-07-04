@@ -19,6 +19,14 @@ async def lifespan(app: FastAPI):
             except Exception:
                 pass
         await conn.run_sync(Base.metadata.create_all)
+        for stmt in (
+            "ALTER TABLE ticket_cases ADD COLUMN IF NOT EXISTS lab_name VARCHAR",
+            "ALTER TABLE ticket_cases ADD COLUMN IF NOT EXISTS deployment_id VARCHAR",
+        ):
+            try:
+                await conn.execute(text(stmt))
+            except Exception:
+                pass
     yield
     await engine.dispose()
 

@@ -7,10 +7,12 @@ interface Props {
   messages: Message[]
   isLoading: boolean
   onSuggestion: (text: string) => void
+  onEdit?: (messageId: string, content: string) => Promise<void>
+  onDelete?: (messageId: string) => Promise<void>
   dark?: boolean
 }
 
-export default function MessageList({ messages, isLoading, onSuggestion, dark }: Props) {
+export default function MessageList({ messages, isLoading, onSuggestion, onEdit, onDelete, dark }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -25,6 +27,8 @@ export default function MessageList({ messages, isLoading, onSuggestion, dark }:
           message={msg}
           isFirst={i === 0 && msg.role === 'assistant'}
           onSuggestion={onSuggestion}
+          onEdit={onEdit}
+          onDelete={onDelete}
           dark={dark}
         />
       ))}

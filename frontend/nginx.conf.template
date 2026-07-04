@@ -1,0 +1,32 @@
+server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Azure's edge network attaches larger request headers (correlation IDs, forwarded
+    # request metadata) than nginx's conservative defaults (8k) expect.
+    large_client_header_buffers 4 32k;
+    client_header_buffer_size 32k;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /api/ {
+        # Required when BACKEND_URL is https:// (e.g. an Azure Container Apps FQDN) —
+        # nginx doesn't send SNI to HTTPS upstreams by default, and Azure's shared
+        # ingress needs it to route to the right app, otherwise it resets the handshake.
+        proxy_ssl_server_name on;
+        proxy_pass ${BACKEND_URL}/api/;
+        # IMPORTANT: do NOT forward the original Host header here. Both apps live under the
+        # same shared *.azurecontainerapps.io domain, and Azure's platform routing uses the
+        # Host header to pick a container app — sending the frontend's own hostname caused
+        # it to route "backend" requests back to the frontend, creating an infinite proxy
+        # loop (visible as an X-Forwarded-For header that balloons to thousands of entries).
+        # $proxy_host resolves to the actual upstream (backend) host from BACKEND_URL.
+        proxy_set_header Host $proxy_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}

@@ -14,6 +14,8 @@ interface ChatState {
   setTicket: (ticket: Ticket) => void
   addMessage: (message: Message) => void
   updateLastMessage: (content: string) => void
+  updateMessageContent: (id: string, content: string) => void
+  removeMessage: (id: string) => void
   setMessages: (messages: Message[]) => void
   setLoading: (loading: boolean) => void
   setStarting: (starting: boolean) => void
@@ -47,6 +49,12 @@ export const useChatStore = create<ChatState>((set) => ({
       }
       return { messages: msgs }
     }),
+  updateMessageContent: (id, content) =>
+    set((state) => ({
+      messages: state.messages.map((m) => (m.id === id ? { ...m, content } : m)),
+    })),
+  removeMessage: (id) =>
+    set((state) => ({ messages: state.messages.filter((m) => m.id !== id) })),
   setMessages: (messages) => set({ messages }),
   setLoading: (isLoading) => set({ isLoading }),
   setStarting: (isStarting) => set({ isStarting }),

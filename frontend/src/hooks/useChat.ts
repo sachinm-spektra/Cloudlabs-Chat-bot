@@ -24,6 +24,8 @@ export function useChat() {
     uploadedAttachmentIds,
     setShowSatisfaction,
     clearChat,
+    updateMessageContent,
+    removeMessage,
   } = useChatStore()
 
   const [isRaising, setIsRaising] = useState(false)
@@ -86,8 +88,9 @@ export function useChat() {
       }
       clearPendingAttachments()
 
+      const messageId = crypto.randomUUID()
       addMessage({
-        id: `local-${Date.now()}`,
+        id: messageId,
         session_id: session.id,
         role: 'user',
         content,
@@ -95,7 +98,7 @@ export function useChat() {
       })
 
       try {
-        const { data } = await sessionApi.sendMessage(session.id, content, attachmentIds)
+        const { data } = await sessionApi.sendMessage(session.id, content, attachmentIds, messageId)
         addMessage(data)
       } catch {
         addMessage({
@@ -110,6 +113,24 @@ export function useChat() {
       }
     },
     [session, isLoading, pendingAttachments, uploadedAttachmentIds, setLoading, clearPendingAttachments, addMessage, addUploadedId]
+  )
+
+  const editMessage = useCallback(
+    async (messageId: string, content: string) => {
+      if (!session) return
+      const { data } = await sessionApi.updateMessage(session.id, messageId, content)
+      updateMessageContent(messageId, data.content)
+    },
+    [session, updateMessageContent]
+  )
+
+  const deleteMessage = useCallback(
+    async (messageId: string) => {
+      if (!session) return
+      await sessionApi.deleteMessage(session.id, messageId)
+      removeMessage(messageId)
+    },
+    [session, removeMessage]
   )
 
   const closeSession = useCallback(
@@ -128,11 +149,11 @@ export function useChat() {
     setMessages(data)
   }, [session, setMessages])
 
-  const raiseTicket = useCallback(async () => {
+  const raiseTicket = useCallback(async (labName: string, deploymentId: string) => {
     if (!ticket || isRaising) return
     setIsRaising(true)
     try {
-      await ticketApi.raise(ticket.id)
+      await ticketApi.raise(ticket.id, labName, deploymentId)
       const { data: refreshed } = await ticketApi.getById(ticket.id)
       setTicket(refreshed)
     } catch {
@@ -154,5 +175,7 @@ export function useChat() {
     startSession,
     raiseTicket,
     isRaising,
+    editMessage,
+    deleteMessage,
   }
 }

@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import { knowledgeApi } from '../../services/api'
 import type { KnowledgeBlob, IngestionResult } from '../../types'
+import OrbitLoader from '../OrbitLoader'
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -239,9 +240,8 @@ export default function KnowledgeBase() {
         </div>
 
         {loading ? (
-          <div className="flex items-center justify-center py-16 text-gray-400">
-            <RefreshCw size={18} className="animate-spin mr-2" />
-            Loading files…
+          <div className="flex items-center justify-center py-16">
+            <OrbitLoader size={40} label="Loading files…" />
           </div>
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-gray-400 gap-2">

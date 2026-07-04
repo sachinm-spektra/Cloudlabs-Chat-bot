@@ -1,17 +1,33 @@
-import { useEffect, useState } from 'react'
-import { MessageSquare, BookOpen, Loader2 } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { MessageSquare, BookOpen } from 'lucide-react'
 import KPICards from './KPICards'
 import QuickActions from './QuickActions'
 import RecentActivity from './RecentActivity'
+import OrbitLoader from '../OrbitLoader'
+import HeroOrb from '../HeroOrb'
 import { adminApi } from '../../services/api'
 import { useAuthStore } from '../../store/authStore'
 import type { AdminMetrics } from '../../types'
 import type { AdminView } from '../../pages/AdminPage'
 
-export default function Dashboard({ onNavigate }: { onNavigate: (v: AdminView) => void }) {
+function getGreeting(): string {
+  const hour = new Date().getHours()
+  if (hour < 12) return 'Good morning'
+  if (hour < 17) return 'Good afternoon'
+  return 'Good evening'
+}
+
+interface Props {
+  onNavigate: (v: AdminView) => void
+  onOpenTicket: (ticketId: string) => void
+}
+
+export default function Dashboard({ onNavigate, onOpenTicket }: Props) {
   const { user } = useAuthStore()
   const [metrics, setMetrics] = useState<AdminMetrics | null>(null)
   const [loading, setLoading] = useState(true)
+  const [tilt, setTilt] = useState({ x: 0, y: 0 })
+  const bannerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     adminApi.getMetrics()
@@ -22,39 +38,56 @@ export default function Dashboard({ onNavigate }: { onNavigate: (v: AdminView) =
 
   const firstName = user?.name.split(' ')[0] ?? 'Admin'
 
+  const handleBannerMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = bannerRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const x = ((e.clientX - rect.left) / rect.width - 0.5) * 2
+    const y = ((e.clientY - rect.top) / rect.height - 0.5) * 2
+    setTilt({ x: x * 6, y: -y * 6 })
+  }
+
+  const handleBannerMouseLeave = () => setTilt({ x: 0, y: 0 })
+
   return (
     <div className="space-y-6 max-w-6xl">
       {/* Welcome banner */}
-      <div className="bg-white rounded-2xl border border-gray-100 p-6">
-        <div className="flex items-start justify-between">
-          <div>
+      <div
+        ref={bannerRef}
+        onMouseMove={handleBannerMouseMove}
+        onMouseLeave={handleBannerMouseLeave}
+        className="relative bg-white rounded-2xl border border-gray-100 p-6 overflow-hidden min-h-[170px]"
+      >
+        {/* very subtle flowing dotted grid backdrop */}
+        <div
+          className="absolute inset-0 pointer-events-none animate-grid-flow"
+          style={{
+            backgroundImage: 'radial-gradient(circle, #6B3FE4 1px, transparent 1.5px)',
+            backgroundSize: '24px 24px',
+            opacity: 0.06,
+          }}
+        />
+
+        <div className="relative grid grid-cols-[1fr_auto_1fr] items-center gap-6 h-full">
+          <div className="min-w-0">
             <div className="inline-flex items-center gap-1.5 bg-primary-50 text-primary-600 text-xs font-semibold px-3 py-1 rounded-full mb-3">
               <span className="w-1.5 h-1.5 rounded-full bg-primary-500" />
               Powered by CloudLabs AI
             </div>
-            <h1 className="text-2xl font-bold text-gray-900">
-              Welcome back, {firstName}.
+            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-3">
+              {getGreeting()}, {firstName}.
+              {loading && <OrbitLoader size={26} />}
             </h1>
-            <p className="text-gray-500 text-sm mt-1.5 max-w-lg">
-              Your AI Lab Support Agent has indexed{' '}
-              <strong className="text-gray-800">
-                {loading ? '…' : (metrics?.knowledge_articles ?? 0).toLocaleString()} articles
-              </strong>{' '}
-              across{' '}
-              <strong className="text-gray-800">
-                {loading ? '…' : metrics?.connected_sources ?? 0} sources
-              </strong>
-              . Ask anything about labs, products or known issues.
-            </p>
           </div>
 
-          <div className="flex items-center gap-3 shrink-0 ml-6">
+          <HeroOrb size={100} tiltX={tilt.x} tiltY={tilt.y} />
+
+          <div className="flex items-center justify-end gap-3">
             <button
               onClick={() => onNavigate('ai-chat')}
               className="flex items-center gap-2 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold rounded-xl transition-colors"
             >
               <MessageSquare size={15} />
-              Ask the Agent
+              AI Chat
             </button>
             <button
               onClick={() => onNavigate('knowledge-base')}
@@ -70,7 +103,7 @@ export default function Dashboard({ onNavigate }: { onNavigate: (v: AdminView) =
       {/* KPIs */}
       {loading ? (
         <div className="flex items-center justify-center h-28">
-          <Loader2 size={20} className="animate-spin text-primary-500" />
+          <OrbitLoader size={48} label="Loading your workspace…" />
         </div>
       ) : (
         <KPICards metrics={metrics ?? undefined} />
@@ -80,7 +113,7 @@ export default function Dashboard({ onNavigate }: { onNavigate: (v: AdminView) =
       <QuickActions onNavigate={onNavigate} />
 
       {/* Recent activity */}
-      <RecentActivity />
+      <RecentActivity onNavigate={onNavigate} onOpenTicket={onOpenTicket} />
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import { BookOpen, CheckCircle2, Database, TrendingUp } from 'lucide-react'
+import { BookOpen, CheckCircle2, Database, TrendingUp, ArrowRightLeft } from 'lucide-react'
 import type { AdminMetrics } from '../../types'
 
 interface KPI {
@@ -17,10 +17,16 @@ function buildKPIs(m: AdminMetrics): KPI[] {
       icon: <BookOpen size={18} className="text-gray-400" />,
     },
     {
-      label: 'RESOLVED QUERIES',
-      value: m.resolved_queries.toLocaleString(),
+      label: 'AI RESOLVED TICKETS',
+      value: m.tickets_resolved_by_ai.toLocaleString(),
       sub: m.resolution_rate > 0 ? `${m.resolution_rate.toFixed(0)}% resolution rate` : 'No resolutions yet',
       icon: <CheckCircle2 size={18} className="text-gray-400" />,
+    },
+    {
+      label: 'TRANSFERRED TICKETS',
+      value: m.transferred_tickets.toLocaleString(),
+      sub: m.transferred_tickets === 0 ? 'None transferred yet' : 'Handed off to support',
+      icon: <ArrowRightLeft size={18} className="text-gray-400" />,
     },
     {
       label: 'CONNECTED SOURCES',
@@ -41,7 +47,7 @@ export default function KPICards({ metrics }: { metrics?: AdminMetrics }) {
   if (!metrics) return null
   const kpis = buildKPIs(metrics)
   return (
-    <div className="grid grid-cols-4 gap-4">
+    <div className="grid grid-cols-5 gap-4">
       {kpis.map((k) => (
         <div
           key={k.label}
